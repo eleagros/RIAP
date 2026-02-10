@@ -197,5 +197,6 @@ cython_debug/
 archives/
 temp/
 third_party/superglue/
-data/
+data/measurements/
+data/measurements.zip
 output/
