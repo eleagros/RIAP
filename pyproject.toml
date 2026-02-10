@@ -15,7 +15,7 @@ authors = [
     { email = "", name = "Arnas Jankauskas" },
 ]
 dynamic = ["version"]
-dependencies = ["imagecodecs", "Pillow", "matplotlib", "numpy", "pandas", "scipy", "tqdm", "openpyxl", "tifffile", "simpleitk", "jupyter"]
+dependencies = ["imagecodecs", "Pillow", "matplotlib", "numpy", "pandas", "scipy", "tqdm", "openpyxl", "tifffile", "simpleitk", "jupyter", "opencv-python"]
 
 [tool.hatch.version]
 path = "src/riap/__init__.py"
