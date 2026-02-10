@@ -1,0 +1,30 @@
+--- /home/elea/Documents/test/riap/third_party/superglue/demo_superglue.py	2022-02-15 11:43:29.000000000 +0100
++++ /home/elea/Documents/HORAO/repositories/RIAP/third_party/superglue/demo_superglue.py	2025-08-26 13:06:42.000000000 +0200
+@@ -49,6 +49,7 @@
+ import cv2
+ import matplotlib.cm as cm
+ import torch
++import pickle
+ 
+ from models.matching import Matching
+ from models.utils import (AverageTimer, VideoStreamer,
+@@ -85,7 +86,7 @@
+              'dimension, if -1, do not resize')
+ 
+     parser.add_argument(
+-        '--superglue', choices={'indoor', 'outdoor'}, default='indoor',
++        '--superglue', choices={'indoor', 'outdoor'}, default='outdoor',
+         help='SuperGlue weights')
+     parser.add_argument(
+         '--max_keypoints', type=int, default=-1,
+@@ -254,6 +255,10 @@
+             out_file = str(Path(opt.output_dir, stem + '.png'))
+             print('\nWriting image to {}'.format(out_file))
+             cv2.imwrite(out_file, out)
++            
++            output = [mkpts0, mkpts1]
++            with open(Path(opt.output_dir, stem + '.pickle'), 'wb') as handle:
++                pickle.dump(output, handle, protocol=pickle.HIGHEST_PROTOCOL)
+ 
+     cv2.destroyAllWindows()
+     vs.cleanup()
