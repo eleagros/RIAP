@@ -1,0 +1,53 @@
+settings:
+  time_base: "_003"
+  PDDN: false
+  metric: "median"
+  tissue_types: 
+    - "WM"
+    - "GM"
+  polarimetric_parameters:
+    - "linR"
+    - "totD"
+    - "azimuth_local_var"
+    - "totP"
+    - "azimuth"
+  instrument: "IMPV2"
+  alignment_method: "elastix"
+  wavelength: 630nm
+
+paths:
+  base_path: "/home/elea/Documents/HORAO/repositories/RIAP"
+  data_path: ${paths.base_path}/data/impv2_dev
+  output_path: ${paths.base_path}/output/IMPV2/
+  output_alignement_folder: ${paths.base_path}/temp
+  elastix_path: ${paths.base_path}/third_party/elastix
+  elastix_binaries: ${paths.elastix_path}/elastix-5.2.0-linux
+  superglue: ${paths.base_path}/third_party/superglue
+
+rois:
+  max_number_of_random_squares: 2
+  number_of_random_squares: 2
+  square_size: 20
+  square_number: 1
+  type_rec_sq: "square"
+
+histograms:
+  linR: 
+    borders: [0, 90]
+    num_bins: 90
+  totP:
+    borders: [0, 1.1]
+    num_bins: 80
+  azimuth_local_var:
+    borders: [0, 80]
+    num_bins: 90
+  totD:
+    borders: [0, 0.5]
+    num_bins: 50
+  azimuth:
+    borders: [0, 180]
+    num_bins: 360
+
+default_paths:
+  polarimetry: "polarimetry/630_Image_Number_LQ/${settings.wavelength}"
+  _50x50_images: "RIAP_results"

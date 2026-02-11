@@ -1,6 +1,4 @@
-import os
-import platform
-import json
+from pathlib import Path
 import shutil
 import tifffile
 from PIL import Image
@@ -10,6 +8,7 @@ import re
 import pandas as pd
 import copy
 import cv2
+import platform
 import SimpleITK as sitk
 from scipy.stats import circmean, circstd
 
@@ -21,21 +20,20 @@ def get_masks(path: str, priority: list = ['bg', 'gm', 'wm']):
     Looks for all files matching GM_XX.tif and WM_XX.tif (XX = two digits).
     Returns a merged mask with values for WM, GM, and BG.
     """
-    annotation_path = os.path.join(path, 'annotation')
+    annotation_path = path / 'annotation'
     values = {'wm': 255, 'gm': 128, 'bg': 0}
     masks = {}
 
     # --- Find all GM_XX.tif and WM_XX.tif files ---
-    all_files = os.listdir(annotation_path)
-    gm_files = sorted([f for f in all_files if re.match(r'[Gg][Mm]_\d{2}\.tif$', f)])
-    wm_files = sorted([f for f in all_files if re.match(r'[Ww][Mm]_\d{2}\.tif$', f)])
+    gm_files = sorted([f for f in annotation_path.glob('*.tif') if re.match(r'[Gg][Mm]_\d{2}\.tif$', f.name)])
+    wm_files = sorted([f for f in annotation_path.glob('*.tif') if re.match(r'[Ww][Mm]_\d{2}\.tif$', f.name)])
 
     if not gm_files or not wm_files:
         raise FileNotFoundError("No GM_XX.tif or WM_XX.tif files found in annotation folder.")
 
     # --- Load and combine all GM and WM masks ---
-    gm_stack = [tifffile.imread(os.path.join(annotation_path, f)) for f in gm_files]
-    wm_stack = [tifffile.imread(os.path.join(annotation_path, f)) for f in wm_files]
+    gm_stack = [tifffile.imread(f) for f in gm_files]
+    wm_stack = [tifffile.imread(f) for f in wm_files]
 
     # Ensure all masks have same shape
     ref_shape = gm_stack[0].shape
@@ -55,7 +53,7 @@ def get_masks(path: str, priority: list = ['bg', 'gm', 'wm']):
         all_merged[masks[p] == 255] = values[p]
 
     # --- Save merged mask ---
-    out_path = os.path.join(annotation_path, 'all_merged.tif')
+    out_path = annotation_path / 'all_merged.tif'
     Image.fromarray(all_merged).save(out_path)
 
     return all_merged
@@ -188,41 +186,45 @@ def update_grid(grided, coordinates):
                 grided[idx, idy] = 1
     return grided
 
-def get_all_folders(parent_dir, base_name, time_base, instrument = 'IMPV1'):
+
+def get_all_folders(folder: Path, time_base: str, instrument='IMPV1'):
     """
-    Find all folders in parent_dir with the same base name, excluding time_base.
+    Find all sibling folders of `folder` in the same parent directory
+    that match the measurement/index pattern, excluding folders with time_base.
     """
-    measurement = base_name.split(time_base)[0]
+    parent_dir = folder.parent
+    base_name = folder.name
+
     if instrument == 'IMPV1':
+        measurement = base_name.split(time_base)[0]
         index_measurement = base_name.split(time_base)[-1]
         return [
-            f for f in os.listdir(parent_dir)
-            if os.path.isdir(os.path.join(parent_dir, f))
-            and measurement in f
-            and index_measurement in f
-            and time_base not in f
+            f for f in parent_dir.iterdir()
+            if f.is_dir()
+            and measurement in f.name
+            and index_measurement in f.name
+            and time_base not in f.name
         ]
     else:
         index_measurement = f"_{base_name.replace(time_base, '').split('_')[-1]}"
         return [
-            f for f in os.listdir(parent_dir)
-            if os.path.isdir(os.path.join(parent_dir, f))
-            and index_measurement in f
-            and time_base not in f
+            f for f in parent_dir.iterdir()
+            if f.is_dir()
+            and index_measurement in f.name
+            and time_base not in f.name
         ]
 
 # --- Alignment and File Management ---
 
-"""def generate_config_file(dir_path):
-    system = platform.system()
-    if system == "Windows":
-        elastix_exe = os.path.join(dir_path, r'elastix-lib/elastix.exe'),
-        transformix_exe = os.path.join(dir_path, r'elastix-lib/transformix.exe'),
-        elastix_lib = '/home/stefanohorao/Documents/software/elastix-501/Build/bin/'
-    else:
-        elastix_exe = os.path.join(dir_path, "elastix-lib", "bin", "elastix")
-        transformix_exe = os.path.join(dir_path, "elastix-lib", "bin", "transformix")
-        elastix_lib = os.path.join(dir_path, "elastix-lib", "lib")
+def generate_config_file(binaries_path, scripts_path):
+    """
+    Generate a configuration file with paths to Elastix executables and libraries for MATLAB engine.
+    """
+    if platform.system() == 'Windows':
+        raise NotImplementedError(f"Please change the paths in the file {str(scripts_path / 'configFilePaths.cfg')} manually for Windows OS, as the current implementation is for Linux.")
+    elastix_exe = binaries_path / "bin" / "elastix"
+    transformix_exe = binaries_path / "bin" / "transformix"
+    elastix_lib = binaries_path / "lib"
     
     shared_libs = r'# /lib/x86_64-linux-gnu/'
 
@@ -245,21 +247,21 @@ def get_all_folders(parent_dir, base_name, time_base, instrument = 'IMPV1'):
         elastix_lib,
         r'% Path HERE!'
     ]
-    path = os.path.join(dir_path, 'RegistrationElastix', 'RegistrationScripts', 'configFilePaths.cfg')
+    path = scripts_path / 'configFilePaths.cfg'
     with open(path, 'w') as fp:
         for item in original_file:
-            fp.write("%s\n" % item)"""
+            fp.write("%s\n" % item)
 
 def move_computed_folders(path_to_align, path_aligned):
     """
     Move aligned folders from 'to_align' to 'aligned'.
     """
-    for fname in os.listdir(path_to_align):
-        if os.path.isdir(os.path.join(path_to_align, fname)):
-            shutil.move(os.path.join(path_to_align, fname), path_aligned)
+    for fname in path_to_align.iterdir():
+        if fname.is_dir():
+            shutil.move(str(fname), str(path_aligned))
         else:
-            assert fname.endswith('.txt'), "Only .txt files are allowed in the 'to_align' folder"
-            shutil.move(os.path.join(path_to_align, fname), os.path.join(path_aligned, 'logbooks', fname))
+            assert fname.name.endswith('.txt'), "Only .txt files are allowed in the 'to_align' folder"
+            shutil.move(str(fname), str(path_aligned / 'logbooks' / fname.name))
 
 # --- Parameter and Statistics Utilities ---
 
@@ -330,43 +332,6 @@ def create_masked_image(intensity_image, mask, path_save):
     intensity_image_msk = copy.deepcopy(intensity_image)
     intensity_image_msk[mask] = 0
     cv2.imwrite(path_save, intensity_image_msk)
-
-# --- Parameter Loading Utilities ---
-
-def load_parameter_maps():
-    """
-    Load parameters for histogram plots from JSON.
-    """
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    with open(os.path.join(dir_path, 'data', 'parameters_map.json')) as json_file:
-        data = json.load(json_file)
-    return data
-
-def load_histogram_parameters():
-    """
-    Load histogram parameters from JSON.
-    """
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    with open(os.path.join(dir_path, 'data', 'histogram_parameters.json')) as json_file:
-        data = json.load(json_file)
-    return data
-
-def load_parameters_ROIs(instrument):
-    """
-    Load ROI parameters from JSON based on the instrument type.
-    """
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-    if instrument == 'IMPV1':
-        file_name = 'parameters_IMPV1.json'
-    else:
-        file_name = 'parameters_IMPV2.json'
-    with open(os.path.join(dir_path, 'data', file_name)) as json_file:
-        data = json.load(json_file)
-    return data
-
-def get_superglue_path():
-    dir_path = os.path.dirname(os.path.realpath(__file__)).split('src/riap')[0]
-    return os.path.join(dir_path, 'third_party', 'superglue')
 
 # --- Miscellaneous Utilities ---
 

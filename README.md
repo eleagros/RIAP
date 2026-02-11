@@ -1,6 +1,5 @@
 # Region-based Image Analysis Platform (RIAP)
-by
-Éléa Gros
+by Éléa Gros
 
 The present repository contains the code used to generate the results presented in the manuscript "Brain Tissue Polarimetry Under Simulated Intraoperative Conditions: Effects of Edema and Temperature" [doi: TBD](doi.org/TBD).
 
@@ -93,9 +92,9 @@ Currently, this repository offers two ways of registering images. One is based o
 
 To use the version based on elastix, you will need to install MATLAB Engine API for Python, following instructions available on [https://www.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html](https://www.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html).
 
-After having successfully installed, you should download elastix binaries [here](https://elastix.dev/download.php), and place them in a subfolder `src/riap/elastix-5.2.0-linux` (replace linux by your OS, if not linux).
+After having successfully installed, you should download elastix binaries [here](https://elastix.dev/download.php), and place them in a subfolder `third_party/elastix/elastix-5.2.0-linux` (replace linux by your OS, if not linux).
 
-Then, modify the paths present in `src/riap/RegistrationElastix/RegistrationScripts/configFilePaths.cfg` to match with your local installation.
+If you are a Windows user (sorry for you), you will need to modify the paths present in `third_party/elastix/RegistrationElastix/RegistrationScripts/configFilePaths.cfg` to match with your local installation.
 
 And... you should be good to go!
 

@@ -202,4 +202,4 @@ data/measurements.zip
 output/
 data/measurements/*
 data/impv2_dev/*
-src/riap/elastix*
+third_party/elastix/elastix-5.2.0-linux
