@@ -94,7 +94,7 @@ def pad_dataframe_with_nans(df, total_columns):
 
 # --- ROI Selection Utilities ---
 
-def get_square_coordinates(mask, mask_pixels, square_size, grid, coordinates=None):
+def get_square_coordinates(mask, mask_pixels, square_size, grid, coordinates=None, treshold_valid_pixels=0.95):
     """
     Randomly select a square ROI in the image, ensuring tissue and validity.
     Returns coordinates and updated grid.
@@ -112,7 +112,7 @@ def get_square_coordinates(mask, mask_pixels, square_size, grid, coordinates=Non
         positive = (
             region.shape[0] * region.shape[1] == np.sum(region)
             and np.sum(grided) == 0
-            and np.sum(region_pixels) > 0.95 * region.shape[0] * region.shape[1] # contains at least 90% valid pixels
+            and np.sum(region_pixels) > treshold_valid_pixels * region.shape[0] * region.shape[1] # contains at least treshold_valid_pixels% valid pixels
         )
         
         if positive:
@@ -188,27 +188,32 @@ def update_grid(grided, coordinates):
                 grided[idx, idy] = 1
     return grided
 
-def get_all_folders(parent_dir, base_name, time_base):
+def get_all_folders(parent_dir, base_name, time_base, instrument = 'IMPV1'):
     """
     Find all folders in parent_dir with the same base name, excluding time_base.
     """
     measurement = base_name.split(time_base)[0]
-    index_measurement = base_name.split(time_base)[-1]
-    return [
-        f for f in os.listdir(parent_dir)
-        if os.path.isdir(os.path.join(parent_dir, f))
-        and measurement in f
-        and index_measurement in f
-        and time_base not in f
-    ]
+    if instrument == 'IMPV1':
+        index_measurement = base_name.split(time_base)[-1]
+        return [
+            f for f in os.listdir(parent_dir)
+            if os.path.isdir(os.path.join(parent_dir, f))
+            and measurement in f
+            and index_measurement in f
+            and time_base not in f
+        ]
+    else:
+        index_measurement = f"_{base_name.replace(time_base, '').split('_')[-1]}"
+        return [
+            f for f in os.listdir(parent_dir)
+            if os.path.isdir(os.path.join(parent_dir, f))
+            and index_measurement in f
+            and time_base not in f
+        ]
 
 # --- Alignment and File Management ---
 
-def generate_config_file(dir_path):
-    """
-    Generate configuration file for MATLAB pipeline.
-    Uses correct paths for Linux or Windows.
-    """
+"""def generate_config_file(dir_path):
     system = platform.system()
     if system == "Windows":
         elastix_exe = os.path.join(dir_path, r'elastix-lib/elastix.exe'),
@@ -243,7 +248,7 @@ def generate_config_file(dir_path):
     path = os.path.join(dir_path, 'RegistrationElastix', 'RegistrationScripts', 'configFilePaths.cfg')
     with open(path, 'w') as fp:
         for item in original_file:
-            fp.write("%s\n" % item)
+            fp.write("%s\n" % item)"""
 
 def move_computed_folders(path_to_align, path_aligned):
     """
@@ -346,12 +351,16 @@ def load_histogram_parameters():
         data = json.load(json_file)
     return data
 
-def load_parameters_ROIs():
+def load_parameters_ROIs(instrument):
     """
-    Load ROI parameters from JSON.
+    Load ROI parameters from JSON based on the instrument type.
     """
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    with open(os.path.join(dir_path, 'data', 'parameters.json')) as json_file:
+    if instrument == 'IMPV1':
+        file_name = 'parameters_IMPV1.json'
+    else:
+        file_name = 'parameters_IMPV2.json'
+    with open(os.path.join(dir_path, 'data', file_name)) as json_file:
         data = json.load(json_file)
     return data
 

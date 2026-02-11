@@ -8,12 +8,15 @@ import cv2
 import uuid
 import math
 import pandas as pd
-# import matlab.engine
+try:    
+    import matlab.engine
+except ImportError:
+    print(" [warning] MATLAB engine for Python is not installed. Elastix alignment will not work.")
 import subprocess
 from riap.helpers import (
     create_masked_image, get_masks, load_parameters_ROIs, load_data_mm,
     create_pandas_stats, get_square_coordinates, sort_stats_dict, get_all_folders,
-    generate_config_file, move_computed_folders, get_angle, get_statistics,
+    move_computed_folders, get_angle, get_statistics,
     load_histogram_parameters, get_all_values_cv, pad_dataframe_with_nans,
     get_superglue_path, align_with_sitk
 )
@@ -33,7 +36,8 @@ class Riap:
         output_alignement_folder: str = None,
         tissue_types: list = ['WM', 'GM'],
         polarimetric_parameters: list = ['linR', 'totD', 'azimuth_local_var', 'totP', 'azimuth'],
-        alignment_method: str = 'elastix'
+        alignment_method: str = 'elastix',
+        instrument: str = 'IMPV1'
     ):
         # Validate input parameters
         if not os.path.exists(data_path):
@@ -73,6 +77,9 @@ class Riap:
             raise ValueError("alignment_method must be either 'elastix' or 'superglue'.")
         self.alignment_method = alignment_method
         
+        if not isinstance(instrument, str) or instrument not in ['IMPV1', 'IMPV2']:
+            raise ValueError("instrument must be either 'IMPV1' or 'IMPV2'.")
+        self.instrument = instrument
         print(" [info] Input parameters validated successfully")
         print(" [info] Riap instance initiated successfully\n")
         
@@ -90,7 +97,7 @@ class Riap:
 
     def __load_parameters(self):
         """Load ROI, polarimetric, and histogram parameters from pre-determined text files."""
-        self.param_ROIs = load_parameters_ROIs()
+        self.param_ROIs = load_parameters_ROIs(self.instrument)
         self.histogram_parameters = load_histogram_parameters()
         self.pixels_per_ROI = self.param_ROIs['square_size'] ** 2
         
@@ -136,8 +143,11 @@ class Riap:
         """Main processing loop for all base directories."""
         for idx_folder, self.path_folder in enumerate(self.base_dirs):
             
-            # Remove previously acquired data 
-            path_results = os.path.join(self.path_folder, 'polarimetry/550nm/50x50_images')
+            # Remove previously acquired data
+            if self.instrument == 'IMPV1':
+                path_results = os.path.join(self.path_folder, 'polarimetry/550nm/50x50_images')
+            else:
+                path_results = os.path.join(self.path_folder, 'RIAP_results')
             shutil.rmtree(path_results, ignore_errors=True)
             os.makedirs(path_results, exist_ok=True)
                 
@@ -145,16 +155,25 @@ class Riap:
             propagation_lists = {}
             self.link_folder_value = {}
             
-            path_polarimetry_wavelength = os.path.join(self.path_folder, 'polarimetry', self.param_ROIs["wavelength"])
-            self.path_folder_50x50 = os.path.join(path_polarimetry_wavelength, '50x50_images')
-            self.MM = load_data_mm(os.path.join(path_polarimetry_wavelength, 'MM.npz'), angle = 0)
-            self.mask_pixels = np.logical_and(self.MM['Msk'], ~self.MM['dilated_mask'])
+            if self.instrument == 'IMPV1':
+                self.path_polarimetry_wavelength = os.path.join(self.path_folder, 'polarimetry', self.param_ROIs["wavelength"])
+                self.path_folder_50x50 = os.path.join(self.path_polarimetry_wavelength, '50x50_images')
+            else:
+                self.path_polarimetry_wavelength = os.path.join(self.path_folder, 'polarimetry', "630_Image_Number_LQ", self.param_ROIs["wavelength"])
+                self.path_folder_50x50 = os.path.join(self.path_folder, 'RIAP_results')
+
+            self.MM = load_data_mm(os.path.join(self.path_polarimetry_wavelength, 'MM.npz'), angle = 0)
+            if self.instrument == 'IMPV1':
+                self.mask_pixels = np.logical_and(self.MM['Msk'], ~self.MM['dilated_mask'])
+            else:
+                self.mask_pixels = np.logical_and(self.MM['Msk'], self.MM['dilated_mask'] == 1)
+
             self.mask = self.all_masks[os.path.basename(self.path_folder)]
-            self.intensity_image = Image.open(os.path.join(path_polarimetry_wavelength, 'Intensity_img.png'))
+            self.intensity_image = Image.open(os.path.join(self.path_polarimetry_wavelength, 'Intensity_img.png'))
             
             self.base_name = os.path.basename(self.path_folder)
             parent_dir = os.path.dirname(self.path_folder)
-            self.all_folders = get_all_folders(parent_dir, self.base_name, self.time_base)
+            self.all_folders = get_all_folders(parent_dir, self.base_name, self.time_base, instrument=self.instrument)
             self.mask_to_propagate = np.zeros(self.mask.shape)
 
             print(f" [info] Found {len(self.all_folders)} folders to propagate to: {self.all_folders}")
@@ -163,7 +182,7 @@ class Riap:
             # Select ROIs for each tissue type
             for self.tissue_type in self.tissue_types:
                 self.intensity_image_masked = cv2.imread(
-                    os.path.join(path_polarimetry_wavelength, 'Intensity_img.png'), cv2.IMREAD_GRAYSCALE
+                    os.path.join(self.path_polarimetry_wavelength, 'Intensity_img.png'), cv2.IMREAD_GRAYSCALE
                 )
                 WM = self.tissue_type == 'WM'
                 self.matter_mask = self.mask == 255 if WM else self.mask == 128
@@ -203,7 +222,7 @@ class Riap:
             try:
                 coordinates_long, self.grid = get_square_coordinates(
                     self.matter_mask, self.mask_pixels, self.param_ROIs['square_size'],
-                    self.grid
+                    self.grid, treshold_valid_pixels=0.95 if self.instrument == 'IMPV1' else 0.01
                 )
                 if coordinates_long is None:
                     exit_error = True
@@ -245,12 +264,17 @@ class Riap:
         os.makedirs(os.path.join(self.current_path_alignment, 'mask'), exist_ok=True)
         Image.fromarray(self.mask_to_propagate.astype(np.uint8)).save(os.path.join(self.current_path_alignment, 'mask', 'mask.png'))
         shutil.copy(
-            os.path.join(self.path_folder, 'polarimetry', self.param_ROIs["wavelength"], 'Intensity_img.png'),
+            os.path.join(self.path_polarimetry_wavelength, 'Intensity_img.png'),
             os.path.join(self.current_path_alignment, os.path.basename(self.path_folder) + '_ref_align.png')
         )
         for folder in self.all_folders:
+            if self.instrument == 'IMPV1':
+                path_polarimetry_wavelength = os.path.join(self.data_path, folder, 'polarimetry', self.param_ROIs["wavelength"],)
+            else:
+                path_polarimetry_wavelength = os.path.join(self.data_path, folder, 'polarimetry', "630_Image_Number_LQ", self.param_ROIs["wavelength"])
+        
             shutil.copy(
-                os.path.join(self.data_path, folder, 'polarimetry', self.param_ROIs["wavelength"], 'Intensity_img.png'),
+                os.path.join(path_polarimetry_wavelength, 'Intensity_img.png'),
                 os.path.join(self.current_path_alignment, folder + '.png')
             )
          
@@ -277,7 +301,7 @@ class Riap:
         Tag = 'AffineElastic'
         with open(os.path.join(dir_path, 'RegistrationElastix/temp/Tag.txt'), 'w') as f:
             f.write(Tag)
-        generate_config_file(dir_path)
+        # generate_config_file(dir_path)
         eng = matlab.engine.start_matlab()
         path = os.path.join(dir_path, r'RegistrationElastix/RegistrationScripts')
         eng.cd(path, nargout=0)
@@ -349,13 +373,17 @@ class Riap:
                 all_angles[folder] = get_angle(
                     os.path.join(path_parameter_files, f"{folder}_AffineElastic_TransformParameters_0.txt")
                 )
+            if self.instrument == 'IMPV1':
+                path_polarimetry_wavelength = os.path.join(self.data_path, folder, 'polarimetry', self.param_ROIs["wavelength"],)
+            else:
+                path_polarimetry_wavelength = os.path.join(self.data_path, folder, 'polarimetry', "630_Image_Number_LQ", self.param_ROIs["wavelength"])
             all_MMs[folder] = load_data_mm(
-                os.path.join(self.data_path, folder, 'polarimetry', self.param_ROIs["wavelength"], 'MM.npz'),
+                os.path.join(path_polarimetry_wavelength, 'MM.npz'),
                 angle=all_angles[folder]
             )
             all_pixels_masks[folder] = np.logical_and(all_MMs[folder]['Msk'], all_MMs[folder]['dilated_mask'])
             all_intensity_images[folder] = cv2.imread(
-                os.path.join(self.data_path, folder, 'polarimetry', self.param_ROIs["wavelength"], 'Intensity_img.png'),
+                os.path.join(path_polarimetry_wavelength, 'Intensity_img.png'),
                 cv2.IMREAD_GRAYSCALE
             )
             if self.alignment_method == 'elastix':
@@ -407,7 +435,7 @@ class Riap:
                     valid_points = np.logical_and(all_masks[folder][matter], mask, mask_px)
                     all_sum = np.sum(mask)
                     proportion = np.sum(valid_points) / all_sum
-                    if proportion < 0.90 or all_sum < 0.9 * self.pixels_per_ROI :
+                    if proportion < 0.90 or all_sum < self.pixels_per_ROI * 0.9 if self.instrument == 'IMPV1' else all_sum < self.pixels_per_ROI * 0.01:
                         for param_name in self.polarimetric_param_names:
                             statitic_folder[param_name] = [math.nan] * 4
                     else:
@@ -438,8 +466,12 @@ class Riap:
         """
         self.all_ROIs = []
         for base_dir in self.base_dirs:
-            path_polarimetry_wavelength = os.path.join(base_dir, 'polarimetry', self.param_ROIs["wavelength"])
-            self.path_folder_50x50 = os.path.join(path_polarimetry_wavelength, '50x50_images')
+            if self.instrument == 'IMPV1':
+                path_polarimetry_wavelength = os.path.join(base_dir, 'polarimetry', self.param_ROIs["wavelength"])
+                self.path_folder_50x50 = os.path.join(path_polarimetry_wavelength, '50x50_images')
+            else:
+                self.path_folder_50x50 = os.path.join(base_dir, 'RIAP_results')
+
             roi_files = [
                 os.path.join(self.path_folder_50x50, f) for f in os.listdir(self.path_folder_50x50) if not '.png' in f
             ]

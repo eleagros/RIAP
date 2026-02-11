@@ -20,6 +20,7 @@ if OPTs.proceedRegistration
         displayInputs(OPTs);
         tic;
         
+  
         if OPTs.inverseFlag % SWAP between FIXED and MOVING!
             successFlag = API_pairwiseRegistrationElastix(OPTs.EXE_Elastix,...
                                                           OPTs.movingFileName,...

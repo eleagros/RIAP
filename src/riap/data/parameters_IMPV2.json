@@ -1,0 +1,8 @@
+{
+    "max_number_of_random_squares": 30, 
+    "number_of_random_squares": 30, 
+    "wavelength": "630nm",
+    "square_size": 20,
+    "square_number": 1,
+    "type_rec_sq": "square"
+}

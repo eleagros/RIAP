@@ -200,3 +200,6 @@ third_party/superglue/
 data/measurements/
 data/measurements.zip
 output/
+data/measurements/*
+data/impv2_dev/*
+src/riap/elastix*

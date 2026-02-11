@@ -4,6 +4,7 @@ successFlag = false;
 
 OPTs = getInputs(varargin);
 
+disp(elastixFileName)
 if exist(elastixFileName,'file') && exist(fixedFileName,'file') && ...
    exist(movingFileName,'file') && exist(outputFolderPath,'file')
    
