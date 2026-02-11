@@ -12,7 +12,6 @@ requires-python = ">=3.8"
 license = { text = "BSD 3-Clause License" }
 authors = [
     { email = "elearomy.gros@unibe.ch", name = "Éléa Gros" },
-    { email = "", name = "Arnas Jankauskas" },
 ]
 dynamic = ["version"]
 dependencies = ["imagecodecs", "Pillow", "matplotlib", "numpy", "pandas", "scipy", "tqdm", "openpyxl", "tifffile", "simpleitk", "jupyter", "opencv-python"]

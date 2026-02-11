@@ -18,6 +18,7 @@ These findings demonstrate that brain edema might alter polarimetric markers and
 imaging, potentially affecting tumor border visualization.
 The in vivo impact of brain edema remains unclear, and further studies are needed to refine polarimetric imaging for surgical guidance in glioma resection.
 
+---
 
 ## Software installation
 
@@ -86,6 +87,20 @@ Some third-party code is provided in `third_party/` is under different licenses 
 - Only the patch file and instructions are provided here, not the SuperGlue code itself.
 - This approach respects the license and allows reproducibility.
 
+## Elastix
+
+Currently, this repository offers two ways of registering images. One is based on [SuperGlue](https://github.com/magicleap/SuperGluePretrainedNetwork), the other on Elastix [elastix](https://elastix.dev/).
+
+To use the version based on elastix, you will need to install MATLAB Engine API for Python, following instructions available on [https://www.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html](https://www.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html).
+
+After having successfully installed, you should download elastix binaries [here](https://elastix.dev/download.php), and place them in a subfolder `src/riap/elastix-5.2.0-linux` (replace linux by your OS, if not linux).
+
+Then, modify the paths present in `src/riap/RegistrationElastix/RegistrationScripts/configFilePaths.cfg` to match with your local installation.
+
+And... you should be good to go!
+
+NB: This repository has been tested for MATLAB R2025b, python 3.12, and elastix 5.2.0.
+
 ---
 
 
@@ -117,12 +132,15 @@ jupyter notebook
 
 ---
 
-
 ## License
 All source code is made available under a BSD license. See `LICENSE` for the full license text.
+
+---
 
 ## Citation
 If you use this code or data, please cite the associated manuscript "Brain Tissue Polarimetry Under Simulated Intraoperative Conditions: Effects of Edema and Temperature" [doi: TBD](doi.org/TBD).
 
+---
+
 ## Acknowledgments
-Many thanks to Stefano Moriconi [https://github.com/stefanomoriconi](https://github.com/stefanomoriconi) for their help in the development of this tool.
+Many thanks to Stefano Moriconi [https://github.com/stefanomoriconi](https://github.com/stefanomoriconi) for his help in the development of this tool.
