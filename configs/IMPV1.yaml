@@ -12,21 +12,27 @@ settings:
     - "totP"
     - "azimuth"
   instrument: "IMPV1"
-  alignment_method: "elastix"
+  alignment_method: "MatchAnything"
   wavelength: 550nm
+  shape_imgs:
+    - 516
+    - 388
+  force_recompute: false
 
 paths:
-  base_path: "/home/elea/Documents/HORAO/repositories/RIAP"
-  data_path: ${paths.base_path}/data/measurements
-  output_path: ${paths.base_path}/output/IMPV1/
+  base_path: "/home/elea/Documents/HORAO/PROJECTS/5_RIAP"
+  data_path: ${paths.base_path}/data/impv2_dev
+  output_path: ${paths.base_path}/output/IMPV2/
   output_alignement_folder: ${paths.base_path}/temp
   elastix_path: ${paths.base_path}/third_party/elastix
   elastix_binaries: ${paths.elastix_path}/elastix-5.2.0-linux
   superglue: ${paths.base_path}/third_party/superglue
+  match_anything_path: ${paths.base_path}/third_party/MatchAnything
+  fiji_path: ${paths.base_path}/third_party/Fiji.app/ImageJ-linux64
 
 rois:
-  max_number_of_random_squares: 2
-  number_of_random_squares: 2
+  max_number_of_random_squares: 30
+  number_of_random_squares: 30
   square_size: 20
   square_number: 1
   type_rec_sq: "square"
