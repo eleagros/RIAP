@@ -1,5 +1,5 @@
 settings:
-  time_base: "_003"
+  time_base: "_004"
   PDDN: false
   metric: "median"
   tissue_types: 
@@ -14,20 +14,26 @@ settings:
   instrument: "IMPV2"
   alignment_method: "elastix"
   wavelength: 630nm
+  shape_imgs:
+    - 608
+    - 512
+  force_recompute: false
 
 paths:
-  base_path: "/home/elea/Documents/HORAO/repositories/RIAP"
+  base_path: "/home/elea/Documents/HORAO/PROJECTS/5_RIAP"
   data_path: ${paths.base_path}/data/impv2_dev
   output_path: ${paths.base_path}/output/IMPV2/
   output_alignement_folder: ${paths.base_path}/temp
   elastix_path: ${paths.base_path}/third_party/elastix
   elastix_binaries: ${paths.elastix_path}/elastix-5.2.0-linux
   superglue: ${paths.base_path}/third_party/superglue
+  match_anything_path: ${paths.base_path}/third_party/MatchAnything
+  fiji_path: ${paths.base_path}/third_party/Fiji.app/ImageJ-linux64
 
 rois:
-  max_number_of_random_squares: 2
-  number_of_random_squares: 2
-  square_size: 20
+  max_number_of_random_squares: 30
+  number_of_random_squares: 30
+  square_size: 30
   square_number: 1
   type_rec_sq: "square"
 
@@ -49,5 +55,5 @@ histograms:
     num_bins: 360
 
 default_paths:
-  polarimetry: "polarimetry/630_Image_Number_LQ/${settings.wavelength}"
+  polarimetry: "polarimetry_cam_registered/630_Image_Number_LQ/${settings.wavelength}"
   _50x50_images: "RIAP_results"

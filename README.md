@@ -29,10 +29,10 @@ It is recommended to use a Python virtual environment to manage dependencies and
     cd riap
     ```
 
-2. **Create a virtual environment (replace `venv` with your preferred name):**
+2. **Install the required dependencies:**
 
     ```sh
-    python3 -m venv venv
+    bash install.sh
     ```
 
 3. **Activate the virtual environment:**
@@ -45,22 +45,6 @@ It is recommended to use a Python virtual environment to manage dependencies and
         ```sh
         venv\Scripts\activate
         ```
-
-4. **Install PyTorch (to ensure cuda compatibility):**
-
-    Follow the instructions for your system and CUDA version at [https://pytorch.org/get-started/locally/](https://pytorch.org/get-started/locally/).  
-    For example, for Linux with pip and CUDA 12.6 (tested):
-
-    ```sh
-    pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-    ```
-
-5. **Install the required dependencies:**
-
-    ```sh
-    pip install -e .
-    ```
-    NB: -e is not strictly required, but allows to modify the source code of this repository directly without needing to reinstall RIAP,
 
 ## Third-party dependencies and licensing
 

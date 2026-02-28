@@ -1,6 +1,9 @@
 from pathlib import Path
+import pickle
+import sys
 import shutil
-import tifffile
+import subprocess
+import tifffile as tiff
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,17 +13,74 @@ import copy
 import cv2
 import platform
 import SimpleITK as sitk
+import imageio
+import random
 from scipy.stats import circmean, circstd
+
+from riap.manual_steps import semi_automatic_processing
+
+_MAX_VALUE = 2**16 - 1
+
+def run_alignment_pipeline(cfg, folder, image0, image1, invreg_dir, output_folder):
+    if (folder / "annotation" / "override.txt").exists():
+        points_moving, points_reference = semi_automatic_processing(folder, image0, image1, force_recompute=False)
+        points_reference = np.array(points_reference)
+        points_moving = np.array(points_moving)
+    else:
+
+        if str(cfg.paths.match_anything_path) not in sys.path:
+            sys.path.append(str(cfg.paths.match_anything_path))
+        from imcui.ui.utils import run_matching
+
+
+        random.seed(42)
+        ransac_reproj_threshold = 12
+                    
+        results = run_matching(
+            image0, image1,
+            match_threshold=0.15,
+            extract_max_keypoints=5000,
+            keypoint_threshold=0.015,
+            key="matchanything_roma",
+            ransac_method="CV2_RANSAC",
+            ransac_reproj_threshold=ransac_reproj_threshold,
+            ransac_confidence=0.999,
+            ransac_max_iter=10000,
+            choice_geometry_type="Homography",
+            matcher_zoo=get_matcher_zoo(),
+            force_resize=False,
+            image_width=640,
+            image_height=480,
+            use_cached_model=False,
+            model=None,
+            matcher=None,
+            use_ransac=True,
+        )
+
+        points_reference, points_moving = results[3][0], results[3][1]
+        dst = invreg_dir / f'match_anything_output_{folder.stem}.png'
+        Image.fromarray(results[2]).save(dst)
+        dst = invreg_dir / f'match_anything_output_full_{folder.stem}.png'
+        Image.fromarray(results[1]).save(dst)
+
+    with open(output_folder / f"matched_points.pickle", "wb") as f:
+        pickle.dump((points_reference, points_moving), f)
+
+    return points_reference, points_moving
 
 # --- Mask and MM Loading Utilities ---
 
-def get_masks(path: str, priority: list = ['bg', 'gm', 'wm']):
+def get_masks(path: str, cfg, priority: list = ['bg', 'gm', 'wm']):
     """
     Load and merge tissue masks from annotation folder.
     Looks for all files matching GM_XX.tif and WM_XX.tif (XX = two digits).
     Returns a merged mask with values for WM, GM, and BG.
     """
     annotation_path = path / 'annotation'
+
+    angle_correction = get_angle_correction(annotation_path)
+    camera_correction = get_camera_correction(annotation_path)
+
     values = {'wm': 255, 'gm': 128, 'bg': 0}
     masks = {}
 
@@ -32,8 +92,8 @@ def get_masks(path: str, priority: list = ['bg', 'gm', 'wm']):
         raise FileNotFoundError("No GM_XX.tif or WM_XX.tif files found in annotation folder.")
 
     # --- Load and combine all GM and WM masks ---
-    gm_stack = [tifffile.imread(f) for f in gm_files]
-    wm_stack = [tifffile.imread(f) for f in wm_files]
+    gm_stack = [tiff.imread(f) for f in gm_files]
+    wm_stack = [tiff.imread(f) for f in wm_files]
 
     # Ensure all masks have same shape
     ref_shape = gm_stack[0].shape
@@ -53,11 +113,55 @@ def get_masks(path: str, priority: list = ['bg', 'gm', 'wm']):
         all_merged[masks[p] == 255] = values[p]
 
     # --- Save merged mask ---
+    out_path = annotation_path / 'all_merged_original.tif'
+    Image.fromarray(all_merged).save(out_path)
+
+    if camera_correction == 'h':
+        all_merged = all_merged[::-1, :]
+    elif camera_correction == 'v':
+        all_merged = all_merged[:, ::-1]
+    elif camera_correction != '':
+        raise ValueError(f"Invalid camera correction value: {camera_correction}. Expected 'h', 'v', or ''.")
+    
+    if angle_correction == 180:
+        all_merged = all_merged[::-1, ::-1]
+    elif angle_correction != 0:
+        raise ValueError(f"Invalid angle correction value: {angle_correction}. Expected 0 or 180.")
+        
     out_path = annotation_path / 'all_merged.tif'
     Image.fromarray(all_merged).save(out_path)
 
+    img = Image.open(path / cfg.default_paths.polarimetry / 'Intensity_img.png')
+    img_blended = Image.blend(img.convert("RGBA"), Image.fromarray(all_merged).convert("RGBA"), alpha=0.05)
+    img_blended.save(annotation_path / 'all_merged_blended.png')
+
     return all_merged
     
+def get_angle_correction(path: str) -> int:
+    """Gets the angle correction from a file if available."""
+    path = Path(path)
+    file_path = path / 'rotation_MM.txt'
+
+    if file_path.exists():
+        try:
+            with file_path.open() as f:
+                return int(f.readline().strip())
+        except (FileNotFoundError, ValueError):
+            return 0  # Return 0 if file not found or invalid
+    return 0  # Return 0 if neither file exists
+
+def get_camera_correction(path: str) -> int:
+    path = Path(path)
+    primary_path = path / 'correct_intensities.txt'
+
+    if primary_path.exists():
+        try:
+            with primary_path.open() as f:
+                return f.readline().strip()
+        except (FileNotFoundError, ValueError):
+            return ''
+    return ''
+
 def load_data_mm(path_MM, angle=0):
     """
     Load Mueller Matrix and apply azimuth correction if needed.
@@ -77,17 +181,11 @@ def pad_dataframe_with_nans(df, total_columns):
     Pad a DataFrame with additional columns of NaNs if not enough columns are provided.
     Columns are named as integers starting from 0.
     """
-    # Convert columns to string for consistency
-    df.columns = [str(c) for c in df.columns]
-    current_cols = df.shape[1]
-    for i in range(current_cols, total_columns):
-        df[str(i)] = np.nan
-    # Ensure all columns exist and are in order
-    all_col_names = [str(i) for i in range(total_columns)]
-    for col in all_col_names:
-        if col not in df.columns:
-            df[col] = np.nan
-    df = df[all_col_names]
+    n_missing = total_columns - df.shape[1]
+
+    if n_missing > 0:
+        for i in range(n_missing):
+            df[f'col_{df.shape[1] + 1}'] = np.nan
     return df
 
 # --- ROI Selection Utilities ---
@@ -331,7 +429,7 @@ def create_masked_image(intensity_image, mask, path_save):
     """
     intensity_image_msk = copy.deepcopy(intensity_image)
     intensity_image_msk[mask] = 0
-    cv2.imwrite(path_save, intensity_image_msk)
+    cv2.imwrite(str(path_save), intensity_image_msk)
 
 # --- Miscellaneous Utilities ---
 
@@ -355,27 +453,7 @@ def subtract_angle(targetA, sourceA):
     a = targetA - sourceA
     return abs((a + 90) % 180 - 90)
 
-def subtract_angles_series(series):
-    """
-    Apply subtract_angle between the first element and each entry of a pandas Series.
-    """
-    ref = series.iloc[0]
-    return series.apply(lambda x: subtract_angle(ref, x))
 
-def get_all_values_cv(all_values):
-    """
-    Compute coefficient of variation for all parameters across tissues.
-    """
-    all_values_cv = copy.deepcopy(all_values)
-
-    for tissue, values in all_values_cv.items():
-        for param, val in values.items():
-            if param == 'azimuth':
-                all_values_cv[tissue][param] = val.apply(subtract_angles_series, axis=0)
-            else:
-                all_values_cv[tissue][param] = val.div(val.iloc[0])
-                
-    return all_values_cv
 
 # --- SITK alignments ---
 
@@ -407,3 +485,215 @@ def align_with_sitk(fixed_arr, to_propagate, matching_points):
             sitk.GetArrayFromImage(sitk.Resample(moving_img, fixed_image, output_transform, interpolator, 0)))
 
     return resampled_images
+
+
+def get_matcher_zoo() -> dict:
+    """
+    Returns a dictionary containing configurations for different MatchAnything models.
+    """
+    return {
+        'matchanything_eloftr': {
+            'matcher': {
+                'output': 'matches-matchanything-eloftr', 
+                'model': {
+                    'name': 'matchanything',
+                    'model_name': 'matchanything_eloftr',
+                    'img_resize': 832,
+                    'match_threshold': 0.020},
+                'preprocessing': {
+                    'grayscale': False,
+                    'resize_max': 832,
+                    'dfactor': 32,
+                    'width': 640,
+                    'height': 480,
+                    'force_resize': True},
+                'max_error': 1,
+                'cell_size': 1},
+            'dense': True},
+        'matchanything_roma': {
+            'matcher': {
+                'output': 'matches-matchanything-roma',
+                'model': {
+                    'name': 'matchanything',
+                    'model_name': 'matchanything_roma',
+                    'img_resize': 832,
+                    'match_threshold': 0.1},
+                'preprocessing': {
+                    'grayscale': False,
+                    'resize_max': 832,
+                    'dfactor': 32,
+                    'width': 640,
+                    'height': 480,
+                    'force_resize': True},
+                'max_error': 1,
+                'cell_size': 1},
+            'dense': True}
+    }
+
+
+# --- Fiji.app alignments ---
+
+def recover_and_reconstruct_labels(cfg, path_output, mask):
+    """
+    recover_and_reconstruct_labels load the aligned images and save them in the FolderAlignHistology object
+    """
+    registered_x = tiff.imread(path_output / "registered_x.tif") / _MAX_VALUE * cfg.settings.shape_imgs[0]
+    registered_y = tiff.imread(path_output / "registered_y.tif") / _MAX_VALUE * cfg.settings.shape_imgs[1]
+
+    mask_aligned = reconstruct_labels(cfg, [registered_x, registered_y], mask)
+    Image.fromarray(mask_aligned).save(path_output / 'mask_registered.png')
+    
+    image_aligned = reconstruct_labels(cfg, [registered_x, registered_y], cv2.imread(str(path_output / "fixed.png"), cv2.IMREAD_GRAYSCALE))
+    Image.fromarray(image_aligned).save(path_output / 'image_registered.png')
+
+
+def reconstruct_labels(cfg, maps, original_labels):
+    """
+    reconstruct_labels is used to reconstruct the labels images from the aligned images and save them in the FolderAlignHistology object
+    """
+    [registered_x, registered_y] = maps
+    reconstructed_labels = np.zeros((cfg.settings.shape_imgs[1], cfg.settings.shape_imgs[0]), dtype=np.uint8)
+
+    for idx, x in enumerate(registered_x):
+        for idy, y in enumerate(x):
+            idy_original_image = round(y)
+            idx_original_image = round(registered_y[idx, idy])
+            if idx_original_image == cfg.settings.shape_imgs[1] or idy_original_image == cfg.settings.shape_imgs[0]:
+                continue
+            reconstructed_labels[idx, idy] = original_labels[idx_original_image, idy_original_image]
+
+    return reconstructed_labels
+
+def align_imgs_ImgJ(cfg, folder, path_output, mask):
+    """
+    align_img_master is the master function organizing the data for the alignment and calling the function actually performing the alignment (in "imgJ_align.py")
+    """
+    save_imgs_alignment(cfg, path_output)
+    macro = generate_macro(path_output)
+    macro_path = Path(path_output) / 'macro.ijm'
+    with open(macro_path, "w") as f:
+        f.write(macro)
+    subprocess.run(["xvfb-run", "-a", str(cfg.paths.fiji_path), "--console", "-macro", macro_path], check=True)
+    recover_and_reconstruct_labels(cfg, path_output, mask)
+    move_the_alignment_results(path_output, folder)
+
+def save_imgs_alignment(
+    cfg, path_output
+) -> None:
+    """
+    Saves images necessary for ImageJ alignment into the temp folder.
+    """
+    img_to_propagate = create_propagation_img(cfg)
+    for idx, suffix in enumerate(['x', 'y']):
+        path_img_tmp = path_output / f'img_brightfield_{suffix}.tif'
+        cv2.imwrite(str(path_img_tmp), img_to_propagate[idx])
+    return img_to_propagate
+
+def create_propagation_img(cfg):
+    """
+    Creates a coordinate map for resampling the tiles, scaled based on the histology processing flag.
+    """
+
+    x_coords = np.arange(cfg.settings.shape_imgs[1])
+    y_coords = np.arange(cfg.settings.shape_imgs[0])
+    to_propagate = [np.tile(x_coords, (cfg.settings.shape_imgs[0], 1)), np.tile(y_coords, (cfg.settings.shape_imgs[1], 1)).T]
+        
+    scale = _MAX_VALUE
+    max_ = _MAX_VALUE
+    img_to_propagate = [np.clip(((to_propagate[1] / np.max(np.abs(to_propagate[1]))) * scale).T.astype('uint16'), 0, max_),
+                        np.clip(((to_propagate[0] / np.max(np.abs(to_propagate[0]))) * scale).T.astype('uint16'), 0, max_)]
+    return img_to_propagate
+
+def move_the_alignment_results(path_output, folder):
+    """
+    move_the_alignment_results is used to move the results into the aligned folder
+    """
+    output_folder = folder / 'annotation' / 'alignment_results'
+    output_folder.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy(path_output / 'mask_registered.png', output_folder / 'mask_registered.png')
+    shutil.copy(path_output / 'image_registered.png', output_folder / 'image_registered.png')
+
+    create_alignment_gif(np.array(Image.open(path_output / 'moving.png')), np.array(Image.open(path_output / 'image_registered.png')), output_folder / 'gif_registered.gif', n_frames=20, duration=0.1)
+
+def create_alignment_gif(
+        image1: np.ndarray,
+        image2: np.ndarray,
+        save_path: str,
+        n_frames: int = 20,
+        duration: float = 0.1,
+        resize_factor: float = 1
+    ):
+    """
+    Creates a looping GIF showing alignment by blending image1 to image2 and back.
+
+    Parameters:
+    - image1: np.array, first image (e.g. reference)
+    - image2: np.array, second image (e.g. registered)
+    - save_path: str, path to save GIF
+    - n_frames: int, number of frames in one direction (total frames = 2*n_frames - 2)
+    - duration: float, seconds per frame in GIF
+    """
+    # Convert to RGB for GIF
+    def to_rgb(img):
+        if img.ndim == 2:
+            return cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        else:
+            return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    img1_rgb = to_rgb(image1)
+    img2_rgb = to_rgb(image2)
+
+    # Resize img2 to match img1 if needed
+    if img1_rgb.shape != img2_rgb.shape:
+        img2_rgb = cv2.resize(img2_rgb, (img1_rgb.shape[1], img1_rgb.shape[0]))
+
+    # Resize both images to half their original size
+    if resize_factor != 1:
+        new_size = (int(img1_rgb.shape[1] * resize_factor), int(img1_rgb.shape[0] * resize_factor))
+        img1_rgb = cv2.resize(img1_rgb, new_size)
+        img2_rgb = cv2.resize(img2_rgb, new_size)
+    
+    # Blend forward frames (image1 -> image2)
+    forward_frames = [cv2.addWeighted(img1_rgb, 1 - alpha, img2_rgb, alpha, 0) for alpha in np.linspace(0, 1, n_frames)]
+
+    # Blend backward frames (image2 -> image1), exclude first and last frames to avoid duplicate frames at the ends
+    backward_frames = forward_frames[-2:0:-1]
+
+    frames = forward_frames + backward_frames
+
+    frames_rgb = [cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) for frame in frames]
+    imageio.mimsave(save_path, frames_rgb, duration=duration, loop=0)
+
+
+def generate_macro(
+    measurement_folder
+) -> str:
+    path_tmp = '"' + str(measurement_folder)
+    path_tmp_no_start = path_tmp.replace('"', '')
+
+    macro = """
+    open(""" + path_tmp + """/fixed.png");
+    open(""" + path_tmp + """/moving.png");
+    call("bunwarpj.bUnwarpJ_.loadLandmarks", """ + path_tmp + """/coordinates.txt");
+    run("bUnwarpJ", "load=""" + path_tmp_no_start + """/coordinates.txt source_image=moving.png target_image=fixed.png registration=Accurate image_subsample_factor=0 initial_deformation=[Very Coarse] final_deformation=[Coarse] divergence_weight=0.1 curl_weight=0.1 landmark_weight=1.5 image_weight=0 consistency_weight=10 stop_threshold=0.01 save_transformations save_direct_transformation=""" + path_tmp_no_start + """/global_img_direct_transf.txt save_inverse_transformation=""" + path_tmp_no_start + """/intensity_img_inverse_transf.txt");
+    close();
+    close();
+    close();
+    open(""" + path_tmp + """/fixed.png");
+    open(""" + path_tmp + """/img_brightfield_x.tif");
+    selectImage("img_brightfield_x.tif");
+    call("bunwarpj.bUnwarpJ_.loadElasticTransform", """ + path_tmp + """/intensity_img_inverse_transf.txt", "fixed.png", "img_brightfield_x.tif");
+    saveAs("Tiff", """ + path_tmp + """/registered_x.tif");
+    close();
+    close();
+    open(""" + path_tmp + """/fixed.png");
+    open(""" + path_tmp + """/img_brightfield_y.tif");
+    selectImage("img_brightfield_y.tif");
+    call("bunwarpj.bUnwarpJ_.loadElasticTransform", """ + path_tmp + """/intensity_img_inverse_transf.txt", "fixed.png", "img_brightfield_y.tif");
+    saveAs("Tiff", """ + path_tmp + """/registered_y.tif");
+    close();
+    close();
+    run("Quit");
+    """
+    return macro

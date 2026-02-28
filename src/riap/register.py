@@ -35,7 +35,7 @@ def create_drying_video(data_path, output_path, time_base="TW_0", text_mins=None
     # Output path
     fps = 1 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+    out = cv2.VideoWriter(str(output_path), fourcc, fps, (w, h))
 
     for frame in frames:
         out.write(frame)

@@ -197,6 +197,8 @@ cython_debug/
 archives/
 temp/
 third_party/superglue/
+third_party/Fiji.app/
+third_party/MatchAnything/
 data/measurements/
 data/measurements.zip
 output/
