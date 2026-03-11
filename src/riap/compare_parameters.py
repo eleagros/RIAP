@@ -1,10 +1,12 @@
+"""Comparison and Excel export utilities for ROI-derived RIAP parameter summaries."""
+
 import pandas as pd
 import os
 import copy
 from loguru import logger
 from openpyxl.utils import get_column_letter
 
-from riap.helpers import subtract_angle, pad_dataframe_with_nans
+from riap.analysis import subtract_angle, pad_dataframe_with_nans
 
 def run_compare_pipeline(cfg, base_dirs, output_path, param_ROIs):
     all_ROIs = []

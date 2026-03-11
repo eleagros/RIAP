@@ -1,3 +1,5 @@
+"""Public API for loading RIAP configurations and running end-to-end analyses."""
+
 from pathlib import Path
 import omegaconf
 from tqdm import tqdm
@@ -12,7 +14,7 @@ except ImportError:
 
 from riap.riap import process
 from riap.compare_parameters import run_compare_pipeline
-from riap.plotter import plot_parameter_comparison
+from riap.visualization import plot_parameter_comparison
 from riap.config import ProcessingConfig
 
 def load_config(config_fname = "IMPV1.yaml") -> dict:

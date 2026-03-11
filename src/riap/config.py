@@ -1,3 +1,5 @@
+"""Typed configuration objects used by the RIAP processing pipeline."""
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Any

@@ -1,5 +1,6 @@
-import platform
+"""Helpers for preparing Elastix integration files used by RIAP."""
 
+import platform
 
 def generate_config_file(binaries_path, scripts_path):
     """

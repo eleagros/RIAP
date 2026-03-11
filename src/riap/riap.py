@@ -1,3 +1,5 @@
+"""Core RIAP processing pipeline orchestration for ROI selection, alignment, and propagation."""
+
 from pathlib import Path
 import pickle
 import shutil
@@ -17,17 +19,29 @@ except ImportError:
     print(" [warning] MATLAB engine for Python is not installed. Elastix alignment will not work.")
 
 from riap.config import ProcessingConfig
-from riap.helpers import (
-    load_data_mm, get_all_folders, move_computed_folders, get_square_coordinates,
-    get_masks, get_angle, get_statistics, create_masked_image, sort_stats_dict, create_pandas_stats
+from riap.roi import (
+    get_all_folders,
+    move_computed_folders,
+    get_square_coordinates,
+    get_masks,
+    create_masked_image,
+)
+from riap.analysis import (
+    load_data_mm,
+    get_angle,
+    get_statistics,
+    sort_stats_dict,
+    create_pandas_stats,
 )
 from riap.elastix import generate_config_file
-from riap.align_utils import (
-    align_with_sitk, run_alignment_pipeline, align_imgs_ImgJ
+from riap.alignment import (
+    OpenCVAligner,
+    align_with_sitk,
+    align_imgs_ImgJ,
+    run_alignment_pipeline,
+    write_mp_fp_txt_format,
 )
-from riap.io_utils import write_mp_fp_txt_format
-from riap.aligner import OpenCValigner
-from riap.io_utils import create_alignment_gif
+from riap.visualization import create_alignment_gif
 
 def process(processing_config: ProcessingConfig):
     """Main processing loop for all base directories."""
@@ -166,7 +180,7 @@ def create_folder_to_align(cfg, all_folders, data_path, path_folder, path_polari
     Image.fromarray(mask_to_propagate.astype(np.uint8)).save(current_path_alignment / 'mask' / 'mask.png')
     shutil.copy(path_polarimetry_wavelength / 'Intensity_img.png', current_path_alignment / (path_folder.name + '_ref_align.png'))
 
-    for folder in all_folders:
+    for folder in sorted(all_folders, key=lambda path: path.name):
         shutil.copy(data_path / folder / cfg.default_paths.polarimetry / 'Intensity_img.png', current_path_alignment / (folder.stem + '.png'))
     
     return current_path_alignment
@@ -218,7 +232,7 @@ def superglue_alignment(cfg, current_path_alignment, all_folders, path_folder):
     invreg_dir.mkdir(parents=True, exist_ok=True)
     
     mask = cv2.imread(str(current_path_alignment / 'mask' / 'mask.png'), cv2.IMREAD_GRAYSCALE)
-    for folder in all_folders:
+    for folder in sorted(all_folders, key=lambda path: path.name):
         pair_dir = current_path_alignment / folder.stem
         pair_dir.mkdir(parents=True, exist_ok=True)
 
@@ -262,7 +276,7 @@ def match_anything_alignment(cfg, current_path_alignment, all_folders, path_fold
     invreg_dir.mkdir(parents=True, exist_ok=True)
 
     mask = cv2.imread(str(current_path_alignment / 'mask' / 'mask.png'), cv2.IMREAD_GRAYSCALE)
-    for folder in all_folders:
+    for folder in sorted(all_folders, key=lambda path: path.name):
         
         output_folder = folder / 'annotation' / 'alignment_results'
         output_folder.mkdir(parents=True, exist_ok=True)
@@ -309,7 +323,7 @@ def match_anything_alignment(cfg, current_path_alignment, all_folders, path_fold
             cv2.imwrite(str(output_folder_propagate / 'mask.png'), mask)
             cv2.imwrite(str(output_folder_propagate / 'intensity_img.png'), image1)
         
-            aligner = OpenCValigner(
+            aligner = OpenCVAligner(
                 output_folder=invreg_dir,
                 input_folder=folder,
                 to_propagate=output_folder_propagate,
@@ -333,12 +347,12 @@ def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, a
     Propagate selected ROIs to all folders and collect statistics.
     Saves results as Excel files.
     """
-    all_ROIs = [f.name for f in path_folder_50x50.iterdir() if f.is_dir()]
+    all_ROIs = sorted([f.name for f in path_folder_50x50.iterdir() if f.is_dir()])
     all_masks, all_angles, all_MMs, all_intensity_images, propagated_masks, all_pixels_masks = {}, {}, {}, {}, {}, {}
     path_parameter_files = current_path_alignment / "invReg"
 
     # Load masks, angles, MM data, and intensity images for all folders
-    for folder in all_folders:
+    for folder in sorted(all_folders, key=lambda path: path.name):
         mask = get_masks(folder, cfg.default_paths.polarimetry)
 
         all_masks[folder] = {'WM': mask == 255, 'GM': mask == 128}
@@ -396,7 +410,7 @@ def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, a
         )
 
         # Statistics for propagated folders
-        for folder in all_folders:
+        for folder in sorted(all_folders, key=lambda path: path.name):
             mask = propagated_masks[folder] == value_in_mask
             mask_px = np.logical_and(all_pixels_masks[folder], propagated_masks[folder] == value_in_mask)
             statitic_folder = {}
@@ -430,5 +444,5 @@ def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, a
 
     # Convert statistics to pandas DataFrames and save as Excel
     pandas_stats = create_pandas_stats(statistics)
-    for ROI, df in pandas_stats.items():
+    for ROI, df in sorted(pandas_stats.items(), key=lambda item: item[0]):
         df.to_excel(path_folder_50x50 / ROI / 'combined.xlsx')
