@@ -15,9 +15,6 @@ class ProcessingConfig:
     path_to_align: Path
     path_aligned: Path
     
-    # Masks
-    all_masks: Dict[Path, Any]
-    
     # Instrument settings
     instrument: str  # 'IMPV1' or other
     time_base: str
@@ -39,7 +36,7 @@ class ProcessingConfig:
     
     def validate(self):
         """Validate configuration parameters."""
-        if self.alignment_method not in ['elastix', 'superglue', 'MatchAnything']:
+        if self.alignment_method not in ['elastix', 'superglue', 'MatchAnything_opencv', 'MatchAnything_imageJ']:
             raise ValueError(f"Unsupported alignment method: {self.alignment_method}")
         
         if self.instrument not in ['IMPV1', 'IMPV2']:

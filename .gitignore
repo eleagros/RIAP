@@ -199,9 +199,7 @@ temp/
 third_party/superglue/
 third_party/Fiji.app/
 third_party/MatchAnything/
-data/measurements/
-data/measurements.zip
 output/
-data/measurements/*
-data/impv2_dev/*
+data/*
+data/*
 third_party/elastix/elastix-5.2.0-linux

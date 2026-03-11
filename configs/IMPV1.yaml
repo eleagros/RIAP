@@ -12,7 +12,7 @@ settings:
     - "totP"
     - "azimuth"
   instrument: "IMPV1"
-  alignment_method: "MatchAnything"
+  alignment_method: "MatchAnything_opencv"
   wavelength: 550nm
   shape_imgs:
     - 516
@@ -57,3 +57,11 @@ histograms:
 default_paths:
   polarimetry: "polarimetry/${settings.wavelength}"
   _50x50_images: "${default_paths.polarimetry}/50x50_images"
+
+time_points:
+  T0: 0
+  T1: 60
+  T2: 120
+  T3: 180
+  T4: 240
+  T5: 300

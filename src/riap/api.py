@@ -10,9 +10,9 @@ try:
 except ImportError:
     print(" [warning] MATLAB engine for Python is not installed. Elastix alignment will not work.")
 
-from riap.helpers import get_masks
 from riap.riap import process
 from riap.compare_parameters import run_compare_pipeline
+from riap.plotter import plot_parameter_comparison
 from riap.config import ProcessingConfig
 
 def load_config(config_fname = "IMPV1.yaml") -> dict:
@@ -74,7 +74,7 @@ class Riap:
     ):
         self.cfg = cfg
 
-        if isinstance(data_path, str):
+        if isinstance(data_path, str) or isinstance(data_path, Path):
             self.cfg.paths.data_path = Path(data_path).expanduser().resolve()
             logger.info(f"Data path set to: {self.cfg.paths.data_path}")
         if not self.cfg.paths.data_path.exists() or not self.cfg.paths.data_path.is_dir():
@@ -102,7 +102,7 @@ class Riap:
             raise ValueError("metric must be one of 'mean', 'max', or 'median'.")
         self.metric = self.cfg.settings.metric
 
-        if isinstance(output_alignement_folder, str):
+        if isinstance(output_alignement_folder, str) or isinstance(output_alignement_folder, Path):
             self.cfg.paths.output_alignement_folder = Path(output_alignement_folder).expanduser().resolve()
             logger.info(f"Output alignment folder set to: {self.cfg.paths.output_alignement_folder}")
         if not isinstance(self.cfg.paths.output_alignement_folder, (str, Path)):
@@ -126,11 +126,11 @@ class Riap:
         if isinstance(alignment_method, str):
             self.cfg.settings.alignment_method = alignment_method
             logger.info(f"Alignment method set to: {self.cfg.settings.alignment_method}")
-        if not isinstance(self.cfg.settings.alignment_method, str) or self.cfg.settings.alignment_method not in ['elastix', 'superglue', 'MatchAnything']:
-            raise ValueError("alignment_method must be either 'elastix', 'superglue', or 'MatchAnything'.")
+        if not isinstance(self.cfg.settings.alignment_method, str) or self.cfg.settings.alignment_method not in ['elastix', 'superglue', 'MatchAnything_opencv', 'MatchAnything_imageJ']:
+            raise ValueError("alignment_method must be either 'elastix', 'superglue', or 'MatchAnything_opencv'/'MatchAnything_imageJ'.")
         self.alignment_method = self.cfg.settings.alignment_method
 
-        if isinstance(path_output, str):
+        if isinstance(path_output, str) or isinstance(path_output, Path):
             self.cfg.paths.output_path = Path(path_output).expanduser().resolve()
             logger.info(f"Output path set to: {self.cfg.paths.output_path}")
         else:
@@ -170,8 +170,11 @@ class Riap:
         self.__get_the_base_dirs()
         logger.info(f"Base directories identified: {[str(dir) for dir in self.base_dirs]}")
         
-        self.__create_the_masks()
-        logger.info("Tissue masks generated successfully")
+        if str(cfg.paths.match_anything_path) not in sys.path:
+            sys.path.append(str(cfg.paths.match_anything_path))
+        
+        # self.__create_the_masks()
+        # logger.info("Tissue masks generated successfully")
         logger.info("Riap instance created successfully")
 
     def __load_parameters(self):
@@ -198,13 +201,6 @@ class Riap:
             if self.time_base in path_folder.name and path_folder.is_dir():
                 base_dirs.append(path_folder)
         self.base_dirs = base_dirs
-        
-    def __create_the_masks(self):
-        """Create masks for all folders in the data path."""
-        self.all_folders = [Path(folder) for folder in self.data_path.iterdir() if folder.is_dir()]
-        self.all_masks = {}
-        for folder_of_interest in tqdm(self.all_folders, desc="Creating masks for folders"):
-            self.all_masks[folder_of_interest] = get_masks(folder_of_interest, self.cfg)
             
     def align_and_propagate(self):
         config = ProcessingConfig(
@@ -213,7 +209,6 @@ class Riap:
             data_path=self.data_path,
             path_to_align=self.path_to_align,
             path_aligned=self.path_aligned,
-            all_masks=self.all_masks,
             instrument=self.instrument,
             time_base=self.time_base,
             tissue_types=self.tissue_types,
@@ -229,5 +224,18 @@ class Riap:
         """
         Compare parameters across all ROIs and save combined statistics.
         """
-        run_compare_pipeline(self.cfg, self.base_dirs, self.output_path, self.param_ROIs)
+        output_path = self.cfg.paths.output_path / self.alignment_method
+        output_path.mkdir(parents=True, exist_ok=True)
+        run_compare_pipeline(self.cfg, self.base_dirs, output_path, self.param_ROIs)
         
+    def plot_results(self):
+        """
+        Plot the results of the parameter comparison.
+        """
+        output_path_xlsx = self.cfg.paths.output_path / self.alignment_method
+        output_path_plots = self.cfg.paths.output_path / self.alignment_method / "plots"
+        output_path_plots.mkdir(parents=True, exist_ok=True)
+
+        for file in output_path_xlsx.iterdir():
+            if file.suffix == ".xlsx":
+                plot_parameter_comparison(output_path_xlsx, output_path_plots, self.cfg.time_points, file.name)

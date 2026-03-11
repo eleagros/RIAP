@@ -70,7 +70,7 @@ Some third-party code is provided in `third_party/` is under different licenses 
 - Only the patch file and instructions are provided here, not the SuperGlue code itself.
 - This approach respects the license and allows reproducibility.
 
-## Elastix
+### Elastix
 
 Currently, this repository offers two ways of registering images. One is based on [SuperGlue](https://github.com/magicleap/SuperGluePretrainedNetwork), the other on Elastix [elastix](https://elastix.dev/).
 
@@ -82,7 +82,23 @@ If you are a Windows user (sorry for you), you will need to modify the paths pre
 
 And... you should be good to go!
 
-NB: This repository has been tested for MATLAB R2025b, python 3.12, and elastix 5.2.0.
+### MatchAnything
+
+The repositories support the use of MatchAnything for feature matching, although the custom functions used as a wrapper for the software are not made available at the moment.
+
+### Additional requirement: Fiji
+
+To use the image alignment and processing features, you need to download [Fiji](https://imagej.net/software/fiji/downloads) (a distribution of ImageJ).  
+After downloading, **extract the `Fiji.app` folder and place it inside the `third_party/` directory** of this repository:
+
+```
+third_party/Fiji.app/
+```
+
+This ensures all Fiji/ImageJ-based scripts will work correctly.
+
+
+NB: This repository has been tested for MATLAB R2025b, python 3.9, elastix 5.2.0, and ImageJ 2.16.0.
 
 ---
 

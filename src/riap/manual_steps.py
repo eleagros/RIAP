@@ -5,14 +5,11 @@ This module provides an interactive GUI for users to manually adjust alignment p
 including rotation, flipping, shrinkage, and offset adjustments.
 """
 import pickle
-import shutil
 from typing import List, Tuple, Optional, Union
 from PIL import Image
 from loguru import logger
 import cv2
 import numpy as np
-
-from riap.io_utils import write_mp_fp_txt_format
 
 def semi_automatic_processing(folder, image0, image1, force_recompute: bool = False) -> None:
     """

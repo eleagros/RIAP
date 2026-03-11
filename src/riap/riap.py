@@ -19,10 +19,15 @@ except ImportError:
 from riap.config import ProcessingConfig
 from riap.helpers import (
     load_data_mm, get_all_folders, move_computed_folders, get_square_coordinates,
-    generate_config_file, align_with_sitk, run_alignment_pipeline, align_imgs_ImgJ,
     get_masks, get_angle, get_statistics, create_masked_image, sort_stats_dict, create_pandas_stats
 )
+from riap.elastix import generate_config_file
+from riap.align_utils import (
+    align_with_sitk, run_alignment_pipeline, align_imgs_ImgJ
+)
 from riap.io_utils import write_mp_fp_txt_format
+from riap.aligner import OpenCValigner
+from riap.io_utils import create_alignment_gif
 
 def process(processing_config: ProcessingConfig):
     """Main processing loop for all base directories."""
@@ -44,12 +49,23 @@ def process(processing_config: ProcessingConfig):
             mask_pixels = np.logical_and(MM['Msk'], ~MM['dilated_mask'])
         else:
             mask_pixels = np.logical_and(MM['Msk'], MM['dilated_mask'] == 1)
-
-        mask = processing_config.all_masks[path_folder]
-        intensity_image = Image.open(path_polarimetry_wavelength / 'Intensity_img.png')
         
         all_folders = get_all_folders(path_folder, processing_config.time_base, instrument=processing_config.instrument)
-        mask_to_propagate = np.zeros(mask.shape)
+
+        all_masks = {}
+        all_masks[path_folder] = get_masks(path_folder, processing_config.cfg.default_paths.polarimetry)
+        for folder_of_interest in tqdm(all_folders, desc="Creating masks for folders"):
+            all_masks[folder_of_interest] = get_masks(
+                folder_of_interest,
+                processing_config.cfg.default_paths.polarimetry,
+                base_folder=path_folder.name,
+                cfg=processing_config.cfg,
+                base_folder_mask=all_masks[path_folder]
+            )
+
+        mask_to_propagate = np.zeros(all_masks[path_folder].shape)
+        mask = all_masks[path_folder]
+        intensity_image = Image.open(path_polarimetry_wavelength / 'Intensity_img.png')
 
         logger.info(f"Found {len(all_folders)} folders to propagate to: {[f.name for f in all_folders]}")
         
@@ -164,8 +180,8 @@ def do_alignment(cfg, alignment_method, path_to_align, current_path_alignment, a
         elastix_alignment(cfg, path_to_align)
     elif alignment_method == 'superglue':
         superglue_alignment(cfg, current_path_alignment, all_folders, path_folder)
-    elif alignment_method == 'MatchAnything':
-        match_anything_alignment(cfg, current_path_alignment, all_folders, path_folder, force_recompute)
+    elif 'MatchAnything' in alignment_method:
+        match_anything_alignment(cfg, current_path_alignment, all_folders, path_folder, alignment_method, force_recompute)
     else:
         raise ValueError(f"Unsupported alignment method: {alignment_method}")
 
@@ -238,7 +254,7 @@ def superglue_alignment(cfg, current_path_alignment, all_folders, path_folder):
         cv2.imwrite(str(out_path), aligned_images[1])
 
 
-def match_anything_alignment(cfg, current_path_alignment, all_folders, path_folder, force_recompute):
+def match_anything_alignment(cfg, current_path_alignment, all_folders, path_folder, alignment_method, force_recompute):
     """
     Perform image alignment using MatchAnything.
     """
@@ -251,17 +267,21 @@ def match_anything_alignment(cfg, current_path_alignment, all_folders, path_fold
         output_folder = folder / 'annotation' / 'alignment_results'
         output_folder.mkdir(parents=True, exist_ok=True)
 
-        image0 = cv2.imread(str(current_path_alignment / (path_folder.stem + '_ref_align.png')))
-        image0 = cv2.cvtColor(image0, cv2.COLOR_BGR2RGB)
-        image1 = cv2.imread(str(current_path_alignment / (folder.stem + '.png')))
+        image1 = cv2.imread(str(current_path_alignment / (path_folder.stem + '_ref_align.png')))
         image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2RGB)
+        image0 = cv2.imread(str(current_path_alignment / (folder.stem + '.png')))
+        image0 = cv2.cvtColor(image0, cv2.COLOR_BGR2RGB)
         
-        if not force_recompute and (output_folder / f"matched_points.pickle").exists():
-            (points_reference, points_moving) = pickle.load((output_folder / f"matched_points.pickle").open("rb"))
+        if not force_recompute and (output_folder / f"matched_points.pickle").exists() and (output_folder / f"warping_function.pickle").exists():
+            (points_moving, points_reference) = pickle.load((output_folder / f"matched_points.pickle").open("rb"))
+            warping_function = pickle.load((output_folder / f"warping_function.pickle").open("rb"))
             logger.info(f"Matched points already exist for {folder.stem}. Skipping alignment.")
         else:
-            points_reference, points_moving = run_alignment_pipeline(cfg, folder, image0, image1, invreg_dir, output_folder)
-        
+            points_moving, points_reference, results = run_alignment_pipeline(cfg, folder, image0, image1, invreg_dir, output_folder)
+            warping_function = results[-2]
+            with open(output_folder / 'warping_function.pickle', "wb") as f:
+                pickle.dump(warping_function, f)
+
         M, _ = cv2.estimateAffine2D(points_reference, points_moving, method=cv2.RANSAC)
         U, _, Vt = np.linalg.svd(M[:, :2])
         R = U @ Vt
@@ -269,23 +289,44 @@ def match_anything_alignment(cfg, current_path_alignment, all_folders, path_fold
         with open(output_folder / f"correction_angle.txt", "w") as f:
             f.write(str(theta))
         
-        temp_imgJ_path = invreg_dir / f"temp_imgJ_{folder.stem}"
-        temp_imgJ_path.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(temp_imgJ_path / "fixed.png"), image0)
-        cv2.imwrite(str(temp_imgJ_path / "moving.png"), image1)
+        if "imageJ" in alignment_method:
+            temp_imgJ_path = invreg_dir / f"temp_imgJ_{folder.stem}"
+            temp_imgJ_path.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(temp_imgJ_path / "fixed.png"), image0)
+            cv2.imwrite(str(temp_imgJ_path / "moving.png"), image1)
+            text_mp_fp = write_mp_fp_txt_format(
+                [points_reference, points_moving],
+                feature_matching_method="matchanything_roma",
+            )
+            with open(temp_imgJ_path / 'coordinates.txt', 'w') as f:
+                f.write(text_mp_fp)
+            align_imgs_ImgJ(cfg, folder, temp_imgJ_path, mask)
+            shutil.copy(output_folder / 'mask_registered.png', invreg_dir / f"mask_PrpgTo_{folder.stem}.png")
 
-        text_mp_fp = write_mp_fp_txt_format(
-            [points_reference, points_moving],
-            feature_matching_method="matchanything_roma",
-        )
-        with open(temp_imgJ_path / 'coordinates.txt', 'w') as f:
-            f.write(text_mp_fp)
-
-        align_imgs_ImgJ(cfg, folder, temp_imgJ_path, mask)
+        elif "opencv" in alignment_method:
+            output_folder_propagate = invreg_dir.parent / f"to_propagate"
+            output_folder_propagate.mkdir(exist_ok=True, parents=True)
+            cv2.imwrite(str(output_folder_propagate / 'mask.png'), mask)
+            cv2.imwrite(str(output_folder_propagate / 'intensity_img.png'), image1)
         
-        shutil.copy(output_folder / 'mask_registered.png', invreg_dir / f"mask_PrpgTo_{folder.stem}.png")
-        shutil.copy(output_folder / 'correction_angle.txt', invreg_dir / f"{folder.stem}_angle.txt")
+            aligner = OpenCValigner(
+                output_folder=invreg_dir,
+                input_folder=folder,
+                to_propagate=output_folder_propagate,
+                fun=warping_function,
+                initial_shape=None
+            )
+            aligner.run()
+            shutil.copy(str(invreg_dir.parent / 'mask_warped.png'), invreg_dir / f"mask_PrpgTo_{folder.stem}.png")
+            create_alignment_gif(
+                image0,
+                np.array(Image.open(str(invreg_dir.parent / 'intensity_img_warped.png'))),
+                output_folder / 'gif_registered.gif',
+                n_frames=20,
+                duration=0.1
+            )
 
+        shutil.copy(output_folder / 'correction_angle.txt', invreg_dir / f"{folder.stem}_angle.txt")
 
 def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, all_folders, link_folder_value, mask_to_propagate, mask_pixels, MM, intensity_image, alignment_method, instrument, histogram_parameters, pixels_per_ROI):
     """
@@ -298,10 +339,10 @@ def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, a
 
     # Load masks, angles, MM data, and intensity images for all folders
     for folder in all_folders:
-        mask = get_masks(folder, cfg)
+        mask = get_masks(folder, cfg.default_paths.polarimetry)
 
         all_masks[folder] = {'WM': mask == 255, 'GM': mask == 128}
-        if alignment_method == 'superglue' or alignment_method == 'MatchAnything':
+        if alignment_method == 'superglue' or 'MatchAnything' in alignment_method:
             with open(path_parameter_files / f"{folder.stem}_angle.txt", "r") as f:
                 all_angles[folder] = float(f.read())
         elif alignment_method == 'elastix':
@@ -319,7 +360,7 @@ def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, a
                 str(path_parameter_files / f"mask_PrpgTo_{folder.stem}_AffineElastic_TransformParameters_0.png"),
                 cv2.IMREAD_GRAYSCALE
             )
-        elif alignment_method == 'superglue' or alignment_method == 'MatchAnything':
+        elif alignment_method == 'superglue' or 'MatchAnything' in alignment_method:
             propagated_masks[folder] = cv2.imread(
                 str(path_parameter_files / f"mask_PrpgTo_{folder.stem}.png"),
                 cv2.IMREAD_GRAYSCALE

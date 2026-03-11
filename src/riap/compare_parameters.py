@@ -41,7 +41,12 @@ def load_all_values(cfg, tissue_types, all_ROIs, metric):
             else:
                 values_and_folder = df[df['parameter'] == parameter][[metric, 'folder']]
 
-            values_and_folder["folder"] = values_and_folder["folder"].str.split("_").str[-1]
+            if cfg.settings.instrument == "IMPV1":
+                values_and_folder["folder"] = values_and_folder["folder"].str.split("_").str[-3]
+            elif cfg.settings.instrument == "IMPV2":
+                values_and_folder["folder"] = values_and_folder["folder"].str.split("_").str[-1]
+            else:
+                logger.warning(f"Unknown instrument {cfg.settings.instrument}, folder names will not be processed.")
             values_and_folder = values_and_folder.set_index("folder")
             all_values[tissue_type][parameter].append(values_and_folder)
 

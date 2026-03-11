@@ -1,5 +1,5 @@
 settings:
-  time_base: "_004"
+  time_base: "_002"
   PDDN: false
   metric: "median"
   tissue_types: 
@@ -12,7 +12,7 @@ settings:
     - "totP"
     - "azimuth"
   instrument: "IMPV2"
-  alignment_method: "elastix"
+  alignment_method: "MatchAnything_opencv"
   wavelength: 630nm
   shape_imgs:
     - 608
@@ -57,3 +57,9 @@ histograms:
 default_paths:
   polarimetry: "polarimetry_cam_registered/630_Image_Number_LQ/${settings.wavelength}"
   _50x50_images: "RIAP_results"
+
+time_points:
+  1: 0
+  2: 60
+  4: 120
+  5: 480
