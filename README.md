@@ -137,7 +137,9 @@ All source code is made available under a BSD license. See `LICENSE` for the ful
 ---
 
 ## Citation
-If you use this code or data, please cite the associated manuscript "Brain Tissue Polarimetry Under Simulated Intraoperative Conditions: Effects of Edema and Temperature" [doi: TBD](doi.org/TBD).
+If you use this code or data, please cite the associated manuscript:
+
+    Gros et al., "Brain Tissue Polarimetry Under Simulated Intraoperative Conditions: Effects of Edema and Temperature", Journal of Innovative Optical Health Sciences, 2026 (doi.org/10.1142/S1793545826500045).
 
 ---
 
