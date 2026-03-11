@@ -197,9 +197,9 @@ cython_debug/
 archives/
 temp/
 third_party/superglue/
-data/measurements/
-data/measurements.zip
+third_party/Fiji.app/
+third_party/MatchAnything/
 output/
-data/measurements/*
-data/impv2_dev/*
+data/*
+data/*
 third_party/elastix/elastix-5.2.0-linux

@@ -1,7 +1,0 @@
-{
-    "linR": {"borders": [0, 90], "num_bins": 80}, 
-    "totP": {"borders": [0, 1.1], "num_bins": 80}, 
-    "azimuth_local_var": {"borders": [0, 80], "num_bins": 90}, 
-    "totD": {"borders": [0, 0.5], "num_bins": 50},
-    "azimuth":  {"borders": [0, 180], "num_bins": 360}
-}

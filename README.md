@@ -29,10 +29,10 @@ It is recommended to use a Python virtual environment to manage dependencies and
     cd riap
     ```
 
-2. **Create a virtual environment (replace `venv` with your preferred name):**
+2. **Install the required dependencies:**
 
     ```sh
-    python3 -m venv venv
+    bash install.sh
     ```
 
 3. **Activate the virtual environment:**
@@ -45,22 +45,6 @@ It is recommended to use a Python virtual environment to manage dependencies and
         ```sh
         venv\Scripts\activate
         ```
-
-4. **Install PyTorch (to ensure cuda compatibility):**
-
-    Follow the instructions for your system and CUDA version at [https://pytorch.org/get-started/locally/](https://pytorch.org/get-started/locally/).  
-    For example, for Linux with pip and CUDA 12.6 (tested):
-
-    ```sh
-    pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-    ```
-
-5. **Install the required dependencies:**
-
-    ```sh
-    pip install -e .
-    ```
-    NB: -e is not strictly required, but allows to modify the source code of this repository directly without needing to reinstall RIAP,
 
 ## Third-party dependencies and licensing
 
@@ -86,7 +70,7 @@ Some third-party code is provided in `third_party/` is under different licenses 
 - Only the patch file and instructions are provided here, not the SuperGlue code itself.
 - This approach respects the license and allows reproducibility.
 
-## Elastix
+### Elastix
 
 Currently, this repository offers two ways of registering images. One is based on [SuperGlue](https://github.com/magicleap/SuperGluePretrainedNetwork), the other on Elastix [elastix](https://elastix.dev/).
 
@@ -98,7 +82,23 @@ If you are a Windows user (sorry for you), you will need to modify the paths pre
 
 And... you should be good to go!
 
-NB: This repository has been tested for MATLAB R2025b, python 3.12, and elastix 5.2.0.
+### MatchAnything
+
+The repositories support the use of MatchAnything for feature matching, although the custom functions used as a wrapper for the software are not made available at the moment.
+
+### Additional requirement: Fiji
+
+To use the image alignment and processing features, you need to download [Fiji](https://imagej.net/software/fiji/downloads) (a distribution of ImageJ).  
+After downloading, **extract the `Fiji.app` folder and place it inside the `third_party/` directory** of this repository:
+
+```
+third_party/Fiji.app/
+```
+
+This ensures all Fiji/ImageJ-based scripts will work correctly.
+
+
+NB: This repository has been tested for MATLAB R2025b, python 3.9, elastix 5.2.0, and ImageJ 2.16.0.
 
 ---
 
