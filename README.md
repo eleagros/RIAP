@@ -1,7 +1,7 @@
 # Region-based Image Analysis Platform (RIAP)
 by Éléa Gros
 
-The present repository contains the code used to generate the results presented in the manuscript "Brain Tissue Polarimetry Under Simulated Intraoperative Conditions: Effects of Edema and Temperature" [doi: 10.1142/S1793545826500045](doi.org/10.1142/S1793545826500045).
+The present repository contains the code used to generate the results presented in the manuscript "Brain Tissue Polarimetry Under Simulated Intraoperative Conditions: Effects of Edema and Temperature" [doi: 10.1142/S1793545826500045](https://doi.org/10.1142/S1793545826500045).
 
 The study aimed to quantify the effect of simulated edema on the polarimetric parameters of brain tissue. 
 
