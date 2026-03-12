@@ -108,7 +108,7 @@ NB: This repository has been tested for MATLAB R2025b, python 3.9, elastix 5.2.0
 An example set of measurements can be downloaded from
 [Download here](https://drive.usercontent.google.com/download?id=1LboN453l3KMtwRyoRMZcH1emT_0calYI&export=download&authuser=1&confirm=t&uuid=3de9bc63-bd9d-45ea-965a-ba9f4dad182c&at=APcXIO1Pw5GxrMZR06Vytsh7lZdB:1770690395492).
 
-After downloading, place the file `measurements.zip` in the `riap/data/measurements/` folder and unzip it there.  
+After downloading, place the file `measurements.zip` in the `riap/data/IMPv1/measurements/` folder and unzip it there.  
 
 ---
 
