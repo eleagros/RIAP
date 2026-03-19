@@ -17,7 +17,7 @@ from riap.visualization import create_alignment_gif
 def get_masks(
         path: str,
         default_path_polarimetry: str,
-        priority: list = ['bg', 'gm', 'wm'],
+        priority: list = ['wm', 'gm'],
         base_folder=None,
         cfg=None,
         base_folder_mask=None
@@ -33,6 +33,7 @@ def get_masks(
 
     gm_files = sorted([f for f in annotation_path.glob('*.tif') if re.match(r'[Gg][Mm]_\d{2}\.tif$', f.name)])
     wm_files = sorted([f for f in annotation_path.glob('*.tif') if re.match(r'[Ww][Mm]_\d{2}\.tif$', f.name)])
+    bg_files = sorted([f for f in annotation_path.glob('*.tif') if re.match(r'[Bb][Gg]_\d{2}\.tif$', f.name)])
 
     if not gm_files or not wm_files:
         if not base_folder:
@@ -50,19 +51,24 @@ def get_masks(
     else:
         gm_stack = [tiff.imread(f) for f in gm_files]
         wm_stack = [tiff.imread(f) for f in wm_files]
+        bg_stack = [tiff.imread(f) for f in bg_files] if bg_files else []
 
         ref_shape = gm_stack[0].shape
-        if any(m.shape != ref_shape for m in gm_stack + wm_stack):
-            raise ValueError("All GM and WM masks must have the same shape.")
-
+        if any(m.shape != ref_shape for m in gm_stack + wm_stack + bg_stack):
+            raise ValueError("All GM, WM, and BG masks must have the same shape.")
         masks['gm'] = np.clip(np.sum(gm_stack, axis=0), 0, 255).astype(np.uint8)
         masks['wm'] = np.clip(np.sum(wm_stack, axis=0), 0, 255).astype(np.uint8)
-        masks['bg'] = ((masks['wm'] == 0) & (masks['gm'] == 0)) * 255
+        if bg_stack:
+            masks['bg'] = np.clip(np.sum(bg_stack, axis=0), 0, 255).astype(np.uint8)
+            masks['bg'] = np.logical_or(masks['bg'], (masks['wm'] == 0) & (masks['gm'] == 0)) * 255
+        else:
+            masks['bg'] = ((masks['wm'] == 0) & (masks['gm'] == 0)) * 255
         masks['bg'] = masks['bg'].astype(np.uint8)
 
         all_merged = np.zeros(masks['bg'].shape, dtype=np.uint8)
         for key in priority:
-            all_merged[masks[key] == 255] = values[key]
+            all_merged[np.logical_and(masks[key] == 255, all_merged == 0)] = values[key]
+        all_merged[masks['bg'] == 255] = values['bg']
 
         out_path = annotation_path / 'all_merged_original.tif'
         Image.fromarray(all_merged).save(out_path)
@@ -100,7 +106,7 @@ def propagate_labels(
     image0 = cv2.imread(str(Path(path) / default_path_polarimetry / 'Intensity_img.png'))
 
     out_dir = annotation_path / 'propagation_masks'
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(exist_ok=True, parents=True)
 
     if (annotation_path / 'propagation_masks' / 'warping_function.pickle').exists():
         with open(annotation_path / 'propagation_masks' / 'warping_function.pickle', "rb") as file_obj:
@@ -176,11 +182,12 @@ def get_square_coordinates(mask, mask_pixels, square_size, grid, coordinates=Non
         if mask[random_row, random_col] == 0:
             counter += 1
             continue
-        region, region_pixels, grided, coordinates = select_region(
+        region, region_pixels, region_saturation, grided, coordinates = select_region(
             mask.shape, mask, mask_pixels, random_row, random_col, square_size, grid
         )
         positive = (
             region.shape[0] * region.shape[1] == np.sum(region)
+            and np.sum(region_saturation) == np.sum(region)
             and np.sum(grided) == 0
             and np.sum(region_pixels) > treshold_valid_pixels * region.shape[0] * region.shape[1]
         )
@@ -223,22 +230,10 @@ def select_region(shape, mask, mask_pixels, idx, idy, square_size, grid, border=
         max_y = idy + (square_size // 2)
     region_mask = mask[int(min_x):int(max_x), int(min_y):int(max_y)]
     region_grid = grid[int(min_x):int(max_x), int(min_y):int(max_y)]
-    region_mask_pixels = mask_pixels[int(min_x):int(max_x), int(min_y):int(max_y)]
+    region_mask_pixels = mask_pixels[0][int(min_x):int(max_x), int(min_y):int(max_y)]
+    region_mask_saturation = mask_pixels[1][int(min_x):int(max_x), int(min_y):int(max_y)]
     coordinates = [min_y, max_y, min_x, max_x]
-    return region_mask, region_mask_pixels, region_grid, coordinates
-
-
-def search_for_validity(mask, idx, MM, coordinates=None):
-    positive = True
-    for row in mask:
-        for val in row:
-            if val == idx:
-                positive = False
-    if positive and idx == 1:
-        valid_pixels = np.sum(MM['Msk'][coordinates[2]:coordinates[3], coordinates[0]:coordinates[1]])
-        positive = valid_pixels > 0 * mask.shape[0] * mask.shape[1]
-    return positive
-
+    return region_mask, region_mask_pixels, region_mask_saturation, region_grid, coordinates
 
 def update_grid(grided, coordinates):
     for idx, row in enumerate(grided):

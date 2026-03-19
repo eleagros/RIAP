@@ -14,8 +14,12 @@ except ImportError:
 
 from riap.riap import process
 from riap.compare_parameters import run_compare_pipeline
-from riap.visualization import plot_parameter_comparison
+from riap.visualization import plot_parameter_comparison, plot_parameter_comparison_multi_solution
 from riap.config import ProcessingConfig
+try:
+    from mmpt import MuellerMatrixProcessor
+except ImportError:
+    print(" [warning] mmpt package is not installed. Polarimetric data processing will not work.")
 
 def load_config(config_fname = "IMPV1.yaml") -> dict:
     """
@@ -62,6 +66,7 @@ class Riap:
         self,
         cfg: dict,
         data_path: str = None,
+        calib_path: str = None,
         path_output: str = None,
         time_base: str = None,
         PDDN: bool = None,
@@ -83,6 +88,10 @@ class Riap:
             raise ValueError(f"The path '{self.cfg.paths.data_path}' does not exist or is not a directory.")
         self.data_path = self.cfg.paths.data_path
         
+        self.calib_path = calib_path
+        if self.calib_path is None:
+            logger.warning("Calibration path not provided, Mueller matrix processing will not work.")
+
         if isinstance(time_base, str):
             self.cfg.settings.time_base = time_base
             logger.info(f"Time base set to: {self.cfg.settings.time_base}")
@@ -171,7 +180,13 @@ class Riap:
         
         self.__get_the_base_dirs()
         logger.info(f"Base directories identified: {[str(dir) for dir in self.base_dirs]}")
-        
+
+        try:
+            # self.__process_polarimetry_data(instrument=self.instrument)
+            pass
+        except ImportError:
+            logger.warning(" [warning] mmpt package is not installed. Polarimetric data processing will not work.")
+
         if str(cfg.paths.match_anything_path) not in sys.path:
             sys.path.append(str(cfg.paths.match_anything_path))
         
@@ -203,7 +218,28 @@ class Riap:
             if self.time_base in path_folder.name and path_folder.is_dir():
                 base_dirs.append(path_folder)
         self.base_dirs = base_dirs
-            
+
+    def __process_polarimetry_data(self, instrument: str = "IMPv1"):
+        """
+        Placeholder method for processing polarimetry data.
+        This method should be implemented with the actual logic for handling the data.
+        """
+        logger.info(f"Processing polarimetric measurements in {self.data_path}')...")
+        paths = [self.data_path]
+        if type(paths) != list:
+            paths = [paths]
+        instrument_config_file = instrument.replace("PV", "Pv")
+        config_fname = f"{instrument_config_file}_default.yaml"
+        app = MuellerMatrixProcessor(
+            config = config_fname,
+            input_dirs = paths,    
+            calib_dir = self.calib_path,             
+            PDDN_mode = 'no',                          
+            force_reprocess = False    
+        )
+        app.process_batch_measurements()
+        logger.success(f"All polarimetric measurements processed successfully.")
+
     def align_and_propagate(self):
         config = ProcessingConfig(
             cfg=self.cfg,
@@ -228,7 +264,12 @@ class Riap:
         """
         output_path = self.cfg.paths.output_path / self.alignment_method
         output_path.mkdir(parents=True, exist_ok=True)
-        run_compare_pipeline(self.cfg, self.base_dirs, output_path, self.param_ROIs)
+        run_compare_pipeline(
+            self.cfg,
+            self.base_dirs,
+            output_path,
+            self.param_ROIs
+        )
         
     def plot_results(self):
         """
@@ -240,4 +281,37 @@ class Riap:
 
         for file in output_path_xlsx.iterdir():
             if file.suffix == ".xlsx":
-                plot_parameter_comparison(output_path_xlsx, output_path_plots, self.cfg.time_points, file.name)
+                plot_parameter_comparison(
+                    output_path_xlsx,
+                    output_path_plots,
+                    self.cfg.time_points,
+                    file.name,
+                    self.cfg.settings.parameters_to_name, 
+                    self.cfg.plot_limits
+                )
+
+    def plot_results_multi_solution(self, solutions_paths: dict):
+        """
+        Plot parameter comparison across multiple solutions on the same figure.
+
+        Parameters
+        ----------
+        solutions_paths : dict
+            Dictionary mapping solution names (e.g., "MatchAnything_opencv", "elastix") to their result directories.
+            Example: {"Solution 1": Path(...), "Solution 2": Path(...)}
+        parameter_file : str
+            Name of the Excel file to load (default: "totP_prism_cv.xlsx").
+        """
+        output_path_plots = self.cfg.paths.output_path.parent / "multi_solution_comparison" / "plots"
+        output_path_plots.mkdir(parents=True, exist_ok=True)
+        
+        for file in (self.cfg.paths.output_path / self.alignment_method).iterdir():
+            if file.suffix == ".xlsx":
+                plot_parameter_comparison_multi_solution(
+                    solutions_paths=solutions_paths,
+                    output_path=output_path_plots,
+                    folder_to_time=self.cfg.time_points,
+                    parameter_file=file.name,
+                    parameters_to_name=self.cfg.settings.parameters_to_name,
+                    plot_limits=self.cfg.plot_limits
+                )

@@ -60,9 +60,9 @@ def process(processing_config: ProcessingConfig):
         
         MM = load_data_mm(path_polarimetry_wavelength / 'MM.npz', angle=0)
         if processing_config.instrument == 'IMPV1':
-            mask_pixels = np.logical_and(MM['Msk'], ~MM['dilated_mask'])
+            mask_pixels = MM['Msk'], ~MM['dilated_mask']
         else:
-            mask_pixels = np.logical_and(MM['Msk'], MM['dilated_mask'] == 1)
+            mask_pixels = MM['Msk'], MM['dilated_mask'] == 1
         
         all_folders = get_all_folders(path_folder, processing_config.time_base, instrument=processing_config.instrument)
 
@@ -139,7 +139,7 @@ def square_selection(param_ROIs, tissue_type, path_folder_50x50, matter_mask, ma
         try:
             coordinates_long, grid = get_square_coordinates(
                 matter_mask, mask_pixels, param_ROIs['square_size'],
-                grid, treshold_valid_pixels=0.95 if instrument == 'IMPV1' else 0.01
+                grid, treshold_valid_pixels=0.95 if instrument == 'IMPV1' else 0.60
             )
             if coordinates_long is None:
                 exit_error = True
@@ -366,7 +366,7 @@ def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, a
 
         path_polarimetry_wavelength = folder / cfg.default_paths.polarimetry
         all_MMs[folder] = load_data_mm(path_polarimetry_wavelength / 'MM.npz', angle=all_angles[folder])
-        all_pixels_masks[folder] = np.logical_and(all_MMs[folder]['Msk'], all_MMs[folder]['dilated_mask'])
+        all_pixels_masks[folder] = [all_MMs[folder]['Msk'], all_MMs[folder]['dilated_mask']]
         all_intensity_images[folder] = cv2.imread(str(path_polarimetry_wavelength / 'Intensity_img.png'), cv2.IMREAD_GRAYSCALE)
 
         if alignment_method == 'elastix':
@@ -393,12 +393,16 @@ def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, a
 
         # Statistics for base folder
         for param_name in cfg.settings.polarimetric_parameters:
-            mask_px = np.logical_and(mask_pixels, mask_to_propagate == value_in_mask)
+            if np.sum(np.logical_and(mask_pixels[1], mask_to_propagate == value_in_mask)) != np.sum( mask_to_propagate == value_in_mask):
+                mask_px = np.zeros(mask_to_propagate.shape, dtype=bool)
+            else:
+                mask_px = np.logical_and(mask_pixels[0], mask_to_propagate == value_in_mask)
             values_parameter = MM[param_name][mask_px]
             stats = get_statistics(
                 values_parameter,
                 histogram_parameters[param_name],
-                param_name
+                param_name,
+                ROI
             )
             statitic_folder[param_name] = stats
         statistics[ROI][base_folder] = statitic_folder
@@ -412,7 +416,10 @@ def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, a
         # Statistics for propagated folders
         for folder in sorted(all_folders, key=lambda path: path.name):
             mask = propagated_masks[folder] == value_in_mask
-            mask_px = np.logical_and(all_pixels_masks[folder], propagated_masks[folder] == value_in_mask)
+            if np.sum(np.logical_and(mask_pixels[1], mask_to_propagate == value_in_mask)) != np.sum( mask_to_propagate == value_in_mask):
+                mask_px = np.zeros(mask_to_propagate.shape, dtype=bool)
+            else:
+                mask_px = np.logical_and(mask_pixels[0], mask_to_propagate == value_in_mask)
             statitic_folder = {}
             if np.sum(mask) == 0:
                 for param_name in cfg.settings.polarimetric_parameters:
@@ -431,7 +438,8 @@ def propagate_roi(cfg, path_folder, path_folder_50x50, current_path_alignment, a
                         stats = get_statistics(
                             values_parameter,
                             histogram_parameters[param_name],
-                            param_name
+                            param_name,
+                            folder
                         )
                         statitic_folder[param_name] = stats
             statistics[ROI][folder.stem] = statitic_folder

@@ -150,7 +150,7 @@ def run_alignment_pipeline(cfg, folder, image0, image1, invreg_dir, output_folde
             match_threshold=0.15,
             extract_max_keypoints=5000,
             keypoint_threshold=0.015,
-            key="matchanything_roma",
+            key="matchanything_eloftr",
             ransac_method="CV2_RANSAC",
             ransac_reproj_threshold=ransac_reproj_threshold,
             ransac_confidence=0.999,
@@ -159,11 +159,11 @@ def run_alignment_pipeline(cfg, folder, image0, image1, invreg_dir, output_folde
             matcher_zoo=get_matcher_zoo(cfg),
             force_resize=False,
             image_width=640,
-            image_height=480,
+            image_height=640,
             use_cached_model=False,
             model=None,
             matcher=None,
-            use_ransac=True,
+            use_ransac=False,
         )
 
         points_reference, points_moving = results[3][0], results[3][1]

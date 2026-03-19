@@ -28,7 +28,7 @@ def pad_dataframe_with_nans(df, total_columns):
     return df
 
 
-def get_statistics(values, param, parameter):
+def get_statistics(values, param, parameter, ROI):
     listed = values
     listed = listed[listed != 0]
     try:
@@ -41,6 +41,9 @@ def get_statistics(values, param, parameter):
             mean = np.mean(listed)
             stdev = np.std(listed)
             median = np.median(listed)
+            if parameter == 'linR':
+                pass
+                # print(f"ROI: {ROI}, Mean: {mean}, Std: {stdev}, Median: {median}, Count: {len(listed)}")
     except Exception:
         mean = np.nan
         stdev = np.nan
